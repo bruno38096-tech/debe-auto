@@ -1,9 +1,9 @@
 <!doctype html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DEBE Auto</title><style>
-:root{--bg:#f7f7f5;--card:#fff;--text:#111;--muted:#6f6f6a;--line:#e6e6e0}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}.wrap{max-width:980px;margin:auto;padding:24px}.brand{font-weight:900;font-size:24px}.brand small{display:block;font-size:10px;letter-spacing:.15em;color:var(--muted)}.hero{padding:60px 0 28px}h1{font-size:48px;line-height:1.05;margin:0 0 14px}.muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;margin-top:18px}.row{display:flex;gap:10px}.row input{flex:1}input{padding:14px;border:1px solid var(--line);border-radius:10px;font-size:15px;width:100%}button{padding:14px 18px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:800;cursor:pointer}.hidden{display:none}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.flag{padding:14px;border:1px solid var(--line);border-radius:12px;background:#fafaf8}.flag b{display:block;margin-bottom:6px}.score{font-size:52px;font-weight:900}.pill{display:inline-block;padding:6px 9px;border-radius:999px;background:#f0f0ec;font-weight:800;font-size:12px}.sources{font-size:12px;color:var(--muted);line-height:1.5}.checks{display:grid;gap:10px}@media(max-width:700px){h1{font-size:36px}.row,.grid{display:grid;grid-template-columns:1fr}}
+:root{--bg:#f7f7f5;--card:#fff;--text:#111;--muted:#6f6f6a;--line:#e6e6e0}*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text)}.wrap{max-width:980px;margin:auto;padding:24px}.brand{font-weight:900;font-size:24px}.brand small{display:block;font-size:10px;letter-spacing:.15em;color:var(--muted)}.hero{padding:60px 0 28px}h1{font-size:48px;line-height:1.05;margin:0 0 14px}.muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;margin-top:18px}.row{display:flex;gap:10px}.row input{flex:1}input{padding:14px;border:1px solid var(--line);border-radius:10px;font-size:15px;width:100%}button{padding:14px 18px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:800;cursor:pointer}.secondary{background:#fff;color:#111;border:1px solid var(--line)}.hidden{display:none}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.flag{padding:14px;border:1px solid var(--line);border-radius:12px;background:#fafaf8}.flag b{display:block;margin-bottom:6px}.score{font-size:52px;font-weight:900}.pill{display:inline-block;padding:6px 9px;border-radius:999px;background:#f0f0ec;font-weight:800;font-size:12px}.sources{font-size:12px;color:var(--muted);line-height:1.5}.checks{display:grid;gap:10px}.result-head{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.restart{white-space:nowrap}@media(max-width:700px){h1{font-size:36px}.row,.grid{display:grid;grid-template-columns:1fr}.result-head{display:block}.restart{margin-top:14px;width:100%}}
 </style></head><body><div class="wrap"><div class="brand">DEBE<small>DECIDE BETTER</small></div><section class="hero"><h1>Antes de comprares, percebe se é uma boa decisão.</h1><div class="muted">Cola o link do anúncio. O DEBE identifica o carro, pesquisa reviews e problemas recorrentes e gera um relatório.</div></section>
-<div class="card"><div class="row"><input id="url" placeholder="https://www.standvirtual.com/..."><button id="analyse">Analisar</button></div><div id="msg" class="muted" style="margin-top:10px;font-size:12px"></div></div>
+<div id="startCard" class="card"><div class="row"><input id="url" placeholder="https://www.standvirtual.com/..."><button id="analyse">Analisar</button></div><div id="msg" class="muted" style="margin-top:10px;font-size:12px"></div></div>
 <div id="confirm" class="card hidden"><span class="pill">Passo 1 de 2</span><h2>Confirmar dados</h2><div class="grid"><input id="model" placeholder="Marca / modelo"><input id="year" placeholder="Ano"><input id="price" placeholder="Preço"><input id="km" placeholder="Quilómetros"><input id="fuel" placeholder="Combustível"><input id="vin" placeholder="VIN (opcional)"></div><button id="report" style="margin-top:14px">Gerar relatório DEBE</button></div>
-<div id="result" class="hidden"><div class="card"><span class="pill">Passo 2 de 2</span><div class="grid" style="align-items:center"><div><div id="score" class="score">—</div><b id="status">A calcular</b><h2 id="car"></h2><div id="meta" class="muted"></div></div><div><b>Score preliminar</b><div id="scoreNote" class="muted" style="margin-top:6px">Calculado com idade, quilometragem, VIN e, quando disponível, sinal da pesquisa externa.</div></div></div></div>
+<div id="result" class="hidden"><div class="card"><div class="result-head"><div style="flex:1"><span class="pill">Passo 2 de 2</span><div class="grid" style="align-items:center;margin-top:12px"><div><div id="score" class="score">—</div><b id="status">A calcular</b><h2 id="car"></h2><div id="meta" class="muted"></div></div><div><b>Score preliminar</b><div id="scoreNote" class="muted" style="margin-top:6px">Calculado com idade, quilometragem, VIN e, quando disponível, sinal da pesquisa externa.</div></div></div></div><button id="restart" class="secondary restart">↻ Verificar novo anúncio</button></div></div>
 <div class="card"><div class="grid"><div class="flag"><b>✓ Pontos fortes</b><div id="strengths" class="muted"></div></div><div class="flag"><b>⚠ Pontos fracos / problemas recorrentes</b><div id="issues" class="muted"></div></div></div><div id="sources" class="sources" style="margin-top:14px"></div></div>
 <div class="card"><h3>Antes de comprar, confirma isto</h3><div class="checks"><div class="flag"><b>1. Histórico e VIN</b><span class="muted">Confirma acidentes, quilometragem, proprietários e manutenção disponível.</span></div><div id="c1" class="flag hidden"></div><div id="c2" class="flag hidden"></div><div class="flag"><b>4. Inspeção pré-compra</b><span class="muted">Uma inspeção independente pode reduzir bastante o risco antes de fechar negócio.</span></div></div></div></div></div>
 <script>
@@ -25,27 +25,39 @@ function renderScore(s){
   $('score').textContent=s;
   $('status').textContent=s>=80?'Boa decisão':s>=65?'Promissor':s>=50?'Cautela':'Risco elevado';
 }
+function resetProcess(){
+  $('url').value=''; $('msg').textContent='';
+  ['model','year','price','km','fuel','vin'].forEach(id=>$(id).value='');
+  $('confirm').classList.add('hidden'); $('result').classList.add('hidden');
+  $('score').textContent='—'; $('status').textContent='A calcular'; $('car').textContent=''; $('meta').textContent='';
+  $('strengths').textContent=''; $('issues').textContent=''; $('sources').textContent='';
+  $('scoreNote').textContent='Calculado com idade, quilometragem, VIN e, quando disponível, sinal da pesquisa externa.';
+  ['c1','c2'].forEach(id=>{$(id).classList.add('hidden');$(id).innerHTML=''});
+  window.scrollTo({top:0,behavior:'smooth'}); setTimeout(()=>$('url').focus(),250);
+}
+$('restart').onclick=resetProcess;
 $('analyse').onclick=async()=>{const u=$('url').value.trim();if(!u)return;$('msg').textContent='A ler anúncio…';try{const r=await fetch('/api/listing?url='+encodeURIComponent(u));const d=await r.json();if(!d.ok)throw Error(d.error);['model','year','price','km','fuel','vin'].forEach((k,i)=>{const map=['title','year','price','km','fuel','vin'];$(k).value=d[map[i]]||''});$('confirm').classList.remove('hidden');$('msg').textContent='Dados extraídos. Corrige apenas se necessário.'}catch(e){$('msg').textContent='Não consegui ler automaticamente este anúncio: '+e.message;$('confirm').classList.remove('hidden')}};
 $('report').onclick=async()=>{
   const model=$('model').value.trim(),year=$('year').value.trim(),price=$('price').value.trim(),km=$('km').value.trim(),fuel=$('fuel').value.trim(),vin=$('vin').value.trim();
   $('car').textContent=model+(year?' — '+year:'');$('meta').textContent=[price,km,fuel].filter(Boolean).join(' · ');
   $('strengths').textContent='A pesquisar…';$('issues').textContent='A pesquisar…';$('sources').textContent='';$('result').classList.remove('hidden');
   const base=vehicleScore(year,km,vin); renderScore(base);
+  const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),9000);
   try{
-    const r=await fetch('/api/research?model='+encodeURIComponent([model,year,fuel].filter(Boolean).join(' ')));
+    const r=await fetch('/api/research?model='+encodeURIComponent([model,year,fuel].filter(Boolean).join(' ')),{signal:controller.signal});
     const d=await r.json(); if(!d.ok) throw Error(d.error);
     if(Number.isFinite(d.research_score)){const finalScore=Math.round(base*0.7+d.research_score*0.3);renderScore(finalScore);$('scoreNote').textContent='Combina idade, quilometragem, VIN e sinal das fontes externas encontradas.'}
     else {$('scoreNote').textContent='Baseado em idade, quilometragem e VIN. A pesquisa externa não estava disponível para ajustar o score.'}
     $('strengths').innerHTML=(d.strengths||[]).map(x=>'• '+esc(x)).join('<br>')||'Sem pontos fortes suficientes para apresentar.';
     $('issues').innerHTML=(d.issues||[]).map(x=>'• '+esc(x)).join('<br>')||'Sem problemas recorrentes suficientes para apresentar.';
-    const src=[]; if((d.expert_sources||[]).length)src.push('<b>Crítica especializada:</b> '+esc(d.expert_sources.join(' · '))); if((d.owner_sources||[]).length)src.push('<b>Proprietários:</b> '+esc(d.owner_sources.join(' · '))); if((d.official_sources||[]).length)src.push('<b>Recalls/técnico:</b> '+esc(d.official_sources.join(' · ')));
+    const src=[]; if((d.expert_sources||[]).length)src.push('<b>Fontes encontradas:</b> '+esc(d.expert_sources.join(' · ')));
     $('sources').innerHTML=src.join('<br>')||(d.research_available?'':'Pesquisa externa limitada neste momento; o relatório usa fallback conservador.');
     ['c1','c2'].forEach((id,i)=>{const c=d.checks&&d.checks[i];if(c){$(id).classList.remove('hidden');$(id).innerHTML='<b>'+(i+2)+'. '+esc(c.title)+'</b><span class="muted">'+esc(c.detail)+'</span>'}else $(id).classList.add('hidden')});
   }catch(e){
-    $('strengths').textContent='Não foi possível carregar a pesquisa externa, mas o score preliminar continua disponível.';
-    $('issues').textContent='Confirma histórico, VIN, recalls e inspeção pré-compra.';
-    $('sources').textContent='Pesquisa externa indisponível: '+e.message;
+    $('strengths').innerHTML='• Idade e quilometragem deste exemplar são favoráveis numa avaliação preliminar, desde que o histórico confirme o estado anunciado.<br>• Confirma histórico de manutenção, VIN e inspeção pré-compra antes da decisão final.';
+    $('issues').innerHTML='• A pesquisa externa não respondeu a tempo para identificar problemas específicos com confiança.<br>• Verifica recalls, campanhas técnicas e histórico de manutenção antes da compra.';
+    $('sources').textContent='Pesquisa externa temporariamente indisponível; foram usados critérios conservadores.';
     $('scoreNote').textContent='Baseado em idade, quilometragem e VIN.';
-  }
+  } finally {clearTimeout(timer)}
 };
 </script></body></html>
