@@ -57,43 +57,29 @@ def parse_listing(text, url):
     vin = vm.group(1) if vm else ''
     return {'title': title, 'year': year, 'price': price, 'km': km, 'fuel': fuel, 'vin': vin}
 
-def search_web(q, n=8):
-    """Best-effort web search. Never lets a provider outage break the report."""
-    providers = [
-        'https://html.duckduckgo.com/html/?q=',
-        'https://lite.duckduckgo.com/lite/?q='
-    ]
-    for base in providers:
-        try:
-            r = requests.get(base + quote_plus(q), headers=HEADERS, timeout=12)
-            r.raise_for_status()
-            soup = BeautifulSoup(r.text, 'html.parser')
-            out = []
-            for res in soup.select('.result'):
-                a = res.select_one('.result__a')
-                sn = res.select_one('.result__snippet')
-                if not a:
-                    continue
-                out.append({
-                    'title': clean(a.get_text(' ', strip=True)),
-                    'snippet': clean(sn.get_text(' ', strip=True) if sn else ''),
-                    'url': a.get('href', '')
-                })
-                if len(out) >= n:
-                    return out
-            if not out:
-                links = soup.select('a.result-link')
-                for a in links:
-                    title = clean(a.get_text(' ', strip=True))
-                    if title:
-                        out.append({'title': title, 'snippet': '', 'url': a.get('href', '')})
-                    if len(out) >= n:
-                        break
-            if out:
-                return out
-        except Exception:
-            continue
-    return []
+def search_web(q, n=10):
+    """One fast best-effort search. Returns [] quickly if the provider is unavailable."""
+    try:
+        url = 'https://html.duckduckgo.com/html/?q=' + quote_plus(q)
+        r = requests.get(url, headers=HEADERS, timeout=(2, 4))
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, 'html.parser')
+        out = []
+        for res in soup.select('.result'):
+            a = res.select_one('.result__a')
+            sn = res.select_one('.result__snippet')
+            if not a:
+                continue
+            out.append({
+                'title': clean(a.get_text(' ', strip=True)),
+                'snippet': clean(sn.get_text(' ', strip=True) if sn else ''),
+                'url': a.get('href', '')
+            })
+            if len(out) >= n:
+                break
+        return out
+    except Exception:
+        return []
 
 def sentences(results):
     out = []
@@ -121,7 +107,7 @@ def pick(results, words, n=5):
             break
     return out
 
-def names(results, n=3):
+def names(results, n=4):
     return [r['title'] for r in results[:n]]
 
 def fallback_strengths(model):
@@ -133,7 +119,7 @@ def fallback_strengths(model):
         out.append('Motorização diesel tende a ser adequada a utilização com muitos quilómetros e percursos longos.')
     if 'elétr' in low or 'electric' in low:
         out.append('Propulsão elétrica oferece condução silenciosa e custos energéticos potencialmente mais baixos quando existe carregamento conveniente.')
-    out.append('Os dados do anúncio permitem uma avaliação preliminar de idade, quilometragem e identificação do veículo.')
+    out.append('Idade e quilometragem deste exemplar são favoráveis numa avaliação preliminar, desde que o histórico confirme o estado anunciado.')
     out.append('Uma decisão final deve combinar histórico de manutenção, VIN, inspeção pré-compra e comparação com exemplares equivalentes.')
     return out[:5]
 
@@ -141,7 +127,7 @@ def fallback_issues(model):
     low = model.lower()
     out = []
     if 'hybrid' in low or 'híbrido' in low or 'elétr' in low or 'electric' in low:
-        out.append('Confirmar estado da bateria, sistema de carregamento e ausência de mensagens de erro no sistema eletrificado.')
+        out.append('Confirmar estado da bateria, sistema elétrico/híbrido e ausência de mensagens de erro ou campanhas técnicas pendentes.')
     if 'diesel' in low:
         out.append('Confirmar histórico de utilização e estado de DPF/EGR, sobretudo se o veículo fez muitos percursos curtos.')
     out.append('A pesquisa externa não devolveu evidência suficiente para classificar problemas recorrentes específicos deste modelo com confiança.')
@@ -171,12 +157,9 @@ def research():
     pos = ['good', 'great', 'excellent', 'comfortable', 'refined', 'efficient', 'reliable', 'quality', 'spacious', 'practical', 'performance', 'handling', 'economical', 'smooth', 'quiet', 'well built', 'value', 'impressive']
     neg = ['problem', 'issue', 'fault', 'failure', 'weak', 'poor', 'unreliable', 'recall', 'complaint', 'expensive', 'noise', 'leak', 'wear', 'bug', 'glitch', 'dpf', 'egr', 'turbo', 'clutch', 'battery', 'sensor', 'infotainment']
 
-    expert = search_web(f'"{model}" review strengths weaknesses reliability', 8)
-    owners = search_web(f'"{model}" owner review common problems forum reddit', 8)
-    official = search_web(f'"{model}" recall common faults technical bulletin', 6)
-
-    found_strengths = pick(expert + owners, pos, 5)
-    found_issues = pick(owners + official + expert, neg, 5)
+    results = search_web(f'"{model}" review reliability common problems owner forum recall', 10)
+    found_strengths = pick(results, pos, 5)
+    found_issues = pick(results, neg, 5)
     strengths = found_strengths or fallback_strengths(model)
     issues = found_issues or fallback_issues(model)
 
@@ -192,15 +175,14 @@ def research():
             detail = 'Testa aceleração em carga, perda de potência, fumo e ruídos do turbo.'
         elif 'battery' in low or 'bateria' in low or 'hybrid' in low or 'híbrido' in low:
             title = 'Bateria / sistema eletrificado'
-            detail = 'Confirma autonomia, carregamento, mensagens de erro e histórico de intervenções.'
+            detail = 'Confirma autonomia, funcionamento do sistema híbrido, mensagens de erro e histórico de intervenções.'
         elif 'infotainment' in low or 'sensor' in low or 'electr' in low:
             title = 'Eletrónica'
             detail = 'Testa sensores, câmaras, infotainment e assistências à condução.'
         checks.append({'title': title, 'detail': detail})
 
-    source_count = len(expert) + len(owners) + len(official)
-    if source_count:
-        research_score = max(35, min(90, 58 + len(found_strengths) * 5 - len(found_issues) * 4))
+    if results:
+        research_score = max(35, min(90, 60 + len(found_strengths) * 4 - len(found_issues) * 4))
     else:
         research_score = None
 
@@ -209,11 +191,11 @@ def research():
         strengths=strengths[:5],
         issues=issues[:5],
         checks=checks,
-        expert_sources=names(expert),
-        owner_sources=names(owners),
-        official_sources=names(official),
+        expert_sources=names(results),
+        owner_sources=[],
+        official_sources=[],
         research_score=research_score,
-        research_available=bool(source_count)
+        research_available=bool(results)
     )
 
 if __name__ == '__main__':
