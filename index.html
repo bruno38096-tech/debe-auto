@@ -9,22 +9,39 @@
 <script>
 const $=id=>document.getElementById(id);
 function num(v){const n=parseInt(String(v||'').replace(/\D/g,''),10);return Number.isFinite(n)?n:null}
-function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[m]))}
 function vehicleScore(year,km,vin){
   const y=num(year), k=num(km), now=new Date().getFullYear();
   if(!y || !k) return vin&&vin.length===17?68:64;
   const age=Math.max(0,now-y);
-  const ageScore=Math.max(35,100-age*5);
   const annual=k/Math.max(1,age||1);
-  let kmScore=40;
-  if(annual<=8000) kmScore=95; else if(annual<=15000) kmScore=85; else if(annual<=25000) kmScore=70; else if(annual<=35000) kmScore=55;
-  let s=Math.round(ageScore*0.52+kmScore*0.43+(vin&&vin.length===17?5:0));
+  const ageScore=Math.max(35,Math.min(98,98-age*4.7));
+  const kmScore=Math.max(35,Math.min(98,98-(annual/1000)*2.15));
+  const absoluteKmPenalty=Math.min(12,(k/100000)*6);
+  let s=Math.round(ageScore*0.52+kmScore*0.43+(vin&&vin.length===17?5:0)-absoluteKmPenalty);
   return Math.max(35,Math.min(95,s));
 }
 function renderScore(s){
   $('score').textContent=s;
   $('status').textContent=s>=80?'Boa decisão':s>=65?'Promissor':s>=50?'Cautela':'Risco elevado';
 }
+function baseStrengths(year,km,vin){
+  const y=num(year),k=num(km),now=new Date().getFullYear(),out=[];
+  if(y && now-y<=4) out.push('Idade relativamente recente é um fator favorável na avaliação preliminar.');
+  if(k && k<60000) out.push('Quilometragem total contida para um usado, sujeita a confirmação documental.');
+  if(vin&&vin.length===17) out.push('VIN disponível permite aprofundar a verificação de histórico e campanhas técnicas.');
+  out.push('A decisão pode ser melhorada confirmando manutenção, estado real e comparação com exemplares equivalentes.');
+  return out.slice(0,4);
+}
+function baseIssues(year,km,vin){
+  const y=num(year),k=num(km),now=new Date().getFullYear(),out=[];
+  if(!vin||vin.length!==17) out.push('VIN não confirmado: falta uma peça importante para validar histórico, recalls e especificação exata.');
+  if(y && now-y>=8) out.push('A idade aumenta a importância de verificar desgaste, manutenção preventiva e componentes já substituídos.');
+  if(k && k>=100000) out.push('Quilometragem elevada: confirmar intervenções de desgaste e manutenção previstas para esta fase de vida.');
+  out.push('Problemas específicos do modelo devem ser cruzados com fontes externas e inspeção pré-compra.');
+  return out.slice(0,4);
+}
+function renderList(id,items,emptyText){$(id).innerHTML=(items||[]).map(x=>'• '+esc(x)).join('<br>')||esc(emptyText)}
 function resetProcess(){
   $('url').value=''; $('msg').textContent='';
   ['model','year','price','km','fuel','vin'].forEach(id=>$(id).value='');
@@ -40,24 +57,27 @@ $('analyse').onclick=async()=>{const u=$('url').value.trim();if(!u)return;$('msg
 $('report').onclick=async()=>{
   const model=$('model').value.trim(),year=$('year').value.trim(),price=$('price').value.trim(),km=$('km').value.trim(),fuel=$('fuel').value.trim(),vin=$('vin').value.trim();
   $('car').textContent=model+(year?' — '+year:'');$('meta').textContent=[price,km,fuel].filter(Boolean).join(' · ');
-  $('strengths').textContent='A pesquisar…';$('issues').textContent='A pesquisar…';$('sources').textContent='';$('result').classList.remove('hidden');
+  $('result').classList.remove('hidden');
   const base=vehicleScore(year,km,vin); renderScore(base);
+  $('scoreNote').textContent='Score preliminar calculado imediatamente com idade, quilometragem e VIN. A pesquisa externa pode ajustá-lo.';
+  renderList('strengths',baseStrengths(year,km,vin),'Sem pontos fortes suficientes para apresentar.');
+  renderList('issues',baseIssues(year,km,vin),'Sem pontos fracos suficientes para apresentar.');
+  $('sources').textContent='A completar pesquisa externa…';
+  $('result').scrollIntoView({behavior:'smooth',block:'start'});
   const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),9000);
   try{
     const r=await fetch('/api/research?model='+encodeURIComponent([model,year,fuel].filter(Boolean).join(' ')),{signal:controller.signal});
     const d=await r.json(); if(!d.ok) throw Error(d.error);
-    if(Number.isFinite(d.research_score)){const finalScore=Math.round(base*0.7+d.research_score*0.3);renderScore(finalScore);$('scoreNote').textContent='Combina idade, quilometragem, VIN e sinal das fontes externas encontradas.'}
+    if(Number.isFinite(d.research_score)){const finalScore=Math.round(base*0.72+d.research_score*0.28);renderScore(finalScore);$('scoreNote').textContent='Combina idade, quilometragem, VIN e sinal das fontes externas encontradas.'}
     else {$('scoreNote').textContent='Baseado em idade, quilometragem e VIN. A pesquisa externa não estava disponível para ajustar o score.'}
-    $('strengths').innerHTML=(d.strengths||[]).map(x=>'• '+esc(x)).join('<br>')||'Sem pontos fortes suficientes para apresentar.';
-    $('issues').innerHTML=(d.issues||[]).map(x=>'• '+esc(x)).join('<br>')||'Sem problemas recorrentes suficientes para apresentar.';
+    if((d.strengths||[]).length) renderList('strengths',d.strengths,'Sem pontos fortes suficientes para apresentar.');
+    if((d.issues||[]).length) renderList('issues',d.issues,'Sem problemas recorrentes suficientes para apresentar.');
     const src=[]; if((d.expert_sources||[]).length)src.push('<b>Fontes encontradas:</b> '+esc(d.expert_sources.join(' · ')));
-    $('sources').innerHTML=src.join('<br>')||(d.research_available?'':'Pesquisa externa limitada neste momento; o relatório usa fallback conservador.');
+    $('sources').innerHTML=src.join('<br>')||(d.research_available?'Pesquisa externa concluída.':'Pesquisa externa limitada neste momento; mantiveram-se critérios conservadores.');
     ['c1','c2'].forEach((id,i)=>{const c=d.checks&&d.checks[i];if(c){$(id).classList.remove('hidden');$(id).innerHTML='<b>'+(i+2)+'. '+esc(c.title)+'</b><span class="muted">'+esc(c.detail)+'</span>'}else $(id).classList.add('hidden')});
   }catch(e){
-    $('strengths').innerHTML='• Idade e quilometragem deste exemplar são favoráveis numa avaliação preliminar, desde que o histórico confirme o estado anunciado.<br>• Confirma histórico de manutenção, VIN e inspeção pré-compra antes da decisão final.';
-    $('issues').innerHTML='• A pesquisa externa não respondeu a tempo para identificar problemas específicos com confiança.<br>• Verifica recalls, campanhas técnicas e histórico de manutenção antes da compra.';
-    $('sources').textContent='Pesquisa externa temporariamente indisponível; foram usados critérios conservadores.';
-    $('scoreNote').textContent='Baseado em idade, quilometragem e VIN.';
+    $('sources').textContent='Pesquisa externa temporariamente indisponível; o relatório mantém os pontos e score preliminares calculados localmente.';
+    $('scoreNote').textContent='Baseado em idade, quilometragem e VIN. A pesquisa externa não respondeu a tempo.';
   } finally {clearTimeout(timer)}
 };
 </script></body></html>
