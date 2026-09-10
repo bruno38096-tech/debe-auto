@@ -1,12 +1,15 @@
 from flask import Flask, request, jsonify, Response
-import requests, re, html as htmllib, unicodedata
+import requests, re, html as htmllib, unicodedata, json
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urljoin, urlparse, parse_qs, unquote
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__, static_folder='.')
-HEADERS = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36','Accept-Language':'pt-PT,pt;q=0.9,en;q=0.8'}
+HEADERS = {
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36',
+    'Accept-Language':'pt-PT,pt;q=0.9,en;q=0.8'
+}
 
 def clean(s): return re.sub(r'\s+',' ',htmllib.unescape(s or '')).strip()
 def alow(s): return unicodedata.normalize('NFKD',s or '').encode('ascii','ignore').decode().lower()
@@ -17,6 +20,7 @@ def num(v):
 def eur(n): return f'{n:,}'.replace(',','.')+' €' if n else ''
 def kms(n): return f'{n:,}'.replace(',','.')+' km' if n else ''
 def slug(s): return re.sub(r'[^a-z0-9]+','-',alow(s)).strip('-')
+def valid_price(n): return 1000 <= n <= 1000000
 
 def fetch_text(url):
     r=requests.get('https://r.jina.ai/'+url,headers=HEADERS,timeout=(4,18));r.raise_for_status();return r.text
@@ -31,20 +35,11 @@ def field(t,label):
 def fuel(t):
     x=alow(t)
     if 'plug-in' in x or 'plug in' in x or 'phev' in x:return 'Híbrido Plug-in'
-    if any(k in x for k in ['diesel','bluehdi','tdi','dci']):return 'Diesel'
-    if any(k in x for k in ['gasolina','petrol','puretech','tsi','tfsi']):return 'Gasolina'
     if 'hybrid' in x or 'hibrid' in x:return 'Híbrido'
     if 'eletric' in x or 'electric' in x:return 'Elétrico'
+    if any(k in x for k in ['diesel','bluehdi','tdi','dci']):return 'Diesel'
+    if any(k in x for k in ['gasolina','petrol','puretech','tsi','tfsi']):return 'Gasolina'
     return ''
-
-def fuel_from_primary(primary, fallback=''):
-    x=alow(primary)
-    if 'plug-in' in x or 'plug in' in x or 'phev' in x:return 'Híbrido Plug-in'
-    if any(k in x for k in ['tdi','diesel','bluehdi','dci','hdi']):return 'Diesel'
-    if any(k in x for k in ['tfsi','tsi','gasolina','petrol','puretech']):return 'Gasolina'
-    if any(k in x for k in ['e-208','electric','eletrico','elétrico','kwh']):return 'Elétrico'
-    if 'hybrid' in x or 'hibrid' in x:return 'Híbrido'
-    return fuel(fallback)
 
 def fuel_group(v):
     x=alow(v)
@@ -67,13 +62,27 @@ def engine_hint(t,url=''):
     pats=[r'\b\d[.,]\d\s*TDI\s*\d{2,3}\s*(?:cv|hp)?',r'\b\d[.,]\d\s*TFSI\s*\d{2,3}\s*(?:cv|hp)?',r'\b50\s*TDI\b',r'\b45\s*TDI\b',r'\b40\s*TDI\b',r'\b55\s*TFSI\b',r'\b50\s*kWh\b',r'\b51\s*kWh\b',r'\b1[.,]2\s*(?:PureTech)?(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bPureTech\s*\d{2,3}\b',r'\b1[.,]5\s*BlueHDi(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bHybrid\s*\d{2,3}\b']
     for p in pats:
         m=re.search(p,x,re.I)
-        if m:
-            z=clean(m.group(0)).replace(',','.')
-            z=re.sub(r'(?i)tdi','TDI',z);z=re.sub(r'(?i)tfsi','TFSI',z);z=re.sub(r'(?i)cv','cv',z)
-            return z
+        if m:return clean(m.group(0)).replace(',','.')
     return ''
 
-def valid_price(n):return 1000<=n<=1000000
+def resolve(h):
+    if not h:return ''
+    if h.startswith('//'):h='https:'+h
+    try:
+        q=parse_qs(urlparse(h).query)
+        if q.get('uddg'):return unquote(q['uddg'][0])
+    except:pass
+    return h
+
+def search(q,n=16):
+    try:
+        r=requests.get('https://html.duckduckgo.com/html/?q='+quote_plus(q),headers=HEADERS,timeout=(3,9));r.raise_for_status();s=BeautifulSoup(r.text,'html.parser');out=[]
+        for x in s.select('.result'):
+            a=x.select_one('.result__a');sn=x.select_one('.result__snippet')
+            if a:out.append({'title':clean(a.get_text(' ',strip=True)),'snippet':clean(sn.get_text(' ',strip=True) if sn else ''),'url':resolve(a.get('href',''))})
+            if len(out)>=n:break
+        return out
+    except:return []
 
 def parse_pisca(t,url):
     raw=title_line(t);model=year=price=km=''
@@ -83,43 +92,74 @@ def parse_pisca(t,url):
         mm=re.match(r'^(.*?)\s*-\s*(?:Usado|Usada)\b',raw,re.I);model=clean(mm.group(1)) if mm else raw
         ym=re.search(r'\s-\s(20\d{2})\s-\sPisca\s*Pisca',raw,re.I);pm=re.search(r'\s-\s([0-9 .]+)\s*€\s-',raw);kk=re.search(r'\s-\s([0-9 .]+)\s*Kms?\s*-',raw,re.I)
         year=ym.group(1) if ym else '';price=eur(num(pm.group(1))) if pm else '';km=kms(num(kk.group(1))) if kk else ''
-    return {'title':model or 'Veículo','year':year,'price':price,'km':km,'fuel':fuel_from_primary(url+' '+raw,field(t,'Combustível') or t[:3500]),'vin':vin(t),'engine':engine_hint(t,url)}
-
-def pretty_model_name(s):
-    parts=clean(s).split();out=[]
-    for p in parts:
-        low=p.lower()
-        if re.fullmatch(r'[a-z]\d',low) or re.fullmatch(r'[a-z]\d{1,2}',low):out.append(low.upper())
-        elif low in ['suv','gt','gti','rs','rs3','amg']:out.append(low.upper())
-        elif low in ['sportback','allroad','avant','touring','cabrio','coupe','sedan','sw']:out.append(low.capitalize())
-        else:out.append(p[:1].upper()+p[1:] if p else p)
-    return ' '.join(out)
+    return {'title':model or 'Veículo','year':year,'price':price,'km':km,'fuel':fuel(url) or fuel(field(t,'Combustível') or t[:3500]),'vin':vin(t),'engine':engine_hint(t,url)}
 
 def olx_model_from_title(raw):
     s=clean(raw)
     s=re.sub(r'\s*[•|–-]\s*OLX\.?pt.*$','',s,flags=re.I)
-    s=re.sub(r'\s*[•|–-]\s*OLX.*$','',s,flags=re.I)
-    s=re.sub(r'[“\"].*?[”\"]',' ',s)
-    s=clean(s)
+    s=re.sub(r'[“\"].*?[”\"]',' ',s);s=clean(s)
     stop=re.search(r'\s+(?:s[- ]?line|amg|m\s*pack|gt\s*line|r[- ]?line|fr|\d[.,]\d\s*(?:tdi|tsi|tfsi|dci|hdi|puretech)|\d{2,3}\s*cv|look\b)',s,re.I)
     if stop:s=s[:stop.start()]
     parts=s.split()
     if len(parts)>=3 and alow(parts[2]) in ['sportback','avant','touring','allroad','cabrio','coupe','sedan','sw']:
-        return pretty_model_name(' '.join(parts[:3]))
-    return pretty_model_name(' '.join(parts[:2])) if len(parts)>=2 else pretty_model_name(s)
+        base=' '.join(parts[:3])
+    else:base=' '.join(parts[:2]) if len(parts)>=2 else s
+    out=[]
+    for p in base.split():
+        lp=alow(p)
+        if re.fullmatch(r'[aqsret]{1,2}\d',lp): p=p[0].upper()+p[1:].upper()
+        elif lp in ['sportback','avant','touring','allroad','cabrio','coupe','sedan','sw']: p=p[:1].upper()+p[1:].lower()
+        elif not out:p=p[:1].upper()+p[1:]
+        out.append(p)
+    return clean(' '.join(out))
+
+def olx_fuel(raw,t):
+    x=alow(raw+' '+field(t,'Combustível'))
+    if any(k in x for k in ['tdi','diesel','dci','hdi','bluehdi']):return 'Diesel'
+    if any(k in x for k in ['tfsi','tsi','gasolina','petrol','puretech']):return 'Gasolina'
+    if any(k in x for k in ['plug-in','plug in','phev']):return 'Híbrido Plug-in'
+    if any(k in x for k in ['hybrid','hibrid']):return 'Híbrido'
+    if any(k in x for k in ['eletric','electric']):return 'Elétrico'
+    return ''
+
+def direct_olx_price(url):
+    try:
+        r=requests.get(url,headers=HEADERS,timeout=(3,8));r.raise_for_status();txt=r.text
+        pats=[
+            r'"price"\s*:\s*"?([0-9]{4,6})"?',
+            r'"priceValue"\s*:\s*"?([0-9]{4,6})"?',
+            r'"amount"\s*:\s*"?([0-9]{4,6})"?',
+            r'([0-9]{1,3}(?:[ .][0-9]{3})+)\s*€'
+        ]
+        for p in pats:
+            for m in re.finditer(p,txt,re.I):
+                n=num(m.group(1))
+                if valid_price(n):return n
+    except:pass
+    return 0
+
+def search_olx_price(raw,url):
+    title=re.sub(r'\s*[•|–-]\s*OLX\.?pt.*$','',clean(raw),flags=re.I)
+    q=f'"{title}" site:olx.pt'
+    for r in search(q,8):
+        blob=clean((r.get('title') or '')+' '+(r.get('snippet') or ''))
+        m=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*€',blob,re.I)
+        if m and valid_price(num(m.group(1))):return num(m.group(1))
+    return 0
 
 def parse_olx(t,url):
-    raw=title_line(t);model=olx_model_from_title(raw);h=t[:10000]
+    raw=title_line(t);model=olx_model_from_title(raw);h=t[:12000]
     ym=re.search(r'\bAno\s*[:\n ]+\s*(20[0-3]\d)\b',h,re.I) or re.search(r'\b(20[0-3]\d)\b',raw)
-    pm=None
+    price_n=0
     for blob in [raw,h,t]:
-        cand=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*(?:€|EUR)\b',blob or '',re.I)
-        if cand and valid_price(num(cand.group(1))):pm=cand;break
+        for pat in [r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*€',r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*EUR\b']:
+            m=re.search(pat,blob or '',re.I)
+            if m and valid_price(num(m.group(1))):price_n=num(m.group(1));break
+        if price_n:break
+    if not price_n:price_n=direct_olx_price(url)
+    if not price_n:price_n=search_olx_price(raw,url)
     kk=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,7})\s*km\b',h,re.I) or re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,7})\s*km\b',t,re.I)
-    listed_fuel=field(t,'Combustível') or field(t,'Combustivel')
-    motor=engine_hint(t,url)
-    detected=fuel_from_primary(raw+' '+motor,listed_fuel)
-    return {'title':model or 'Veículo','year':ym.group(1) if ym else '','price':eur(num(pm.group(1))) if pm else '','km':kms(num(kk.group(1))) if kk else '','fuel':detected,'vin':vin(t),'engine':motor}
+    return {'title':model or 'Veículo','year':ym.group(1) if ym else '','price':eur(price_n),'km':kms(num(kk.group(1))) if kk else '','fuel':olx_fuel(raw,t),'vin':vin(t),'engine':engine_hint(t,url)}
 
 def parse_generic(t,url):
     b,m,v=field(t,'Marca'),field(t,'Modelo'),field(t,'Versão');raw=title_line(t)
@@ -129,15 +169,14 @@ def parse_generic(t,url):
     title=re.sub(r'^\s*\d[\d .]*\s*(?:€|EUR)\s*[-–|]\s*','',title,flags=re.I)
     title=clean(title).strip(' -|');h=t[:9000]
     ym=re.search(r'\bAno\s*[:\n ]+\s*(20[0-3]\d)\b',h,re.I) or re.search(r'\b(20[0-3]\d)\b[^\n]{0,140}?\b(?:km|Autom[aá]tica|Manual)\b',h,re.I) or re.search(r'\b(?:Usado|Used)\b[^\n]{0,120}?\b(20[0-3]\d)\b',raw,re.I)
-    price_patterns=[r'\b([0-9]{1,3}(?:[ .][0-9]{3})+)\s*(?:€|EUR)\b',r'\b([0-9]{4,6})\s*(?:€|EUR)\b']
     pm=None
     for blob in [raw,h,t]:
-        for pat in price_patterns:
+        for pat in [r'\b([0-9]{1,3}(?:[ .][0-9]{3})+)\s*(?:€|EUR)',r'\b([0-9]{4,6})\s*(?:€|EUR)']:
             cand=re.search(pat,blob or '',re.I)
             if cand and valid_price(num(cand.group(1))):pm=cand;break
         if pm:break
     kk=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+)\s*km\b',t,re.I) or re.search(r'\b([0-9]{4,7})\s*km\b',t,re.I)
-    return {'title':title,'year':ym.group(1) if ym else '','price':eur(num(pm.group(1))) if pm else '','km':kms(num(kk.group(1))) if kk else '','fuel':fuel_from_primary(raw+' '+field(t,'Combustível'),h),'vin':vin(t),'engine':engine_hint(t,url)}
+    return {'title':title,'year':ym.group(1) if ym else '','price':eur(num(pm.group(1))) if pm else '','km':kms(num(kk.group(1))) if kk else '','fuel':fuel(url) or fuel(field(t,'Combustível') or h),'vin':vin(t),'engine':engine_hint(t,url)}
 
 def parse_listing(t,u):
     host=urlparse(u).netloc.lower()
@@ -168,25 +207,6 @@ def safe_listing_image(url,text,model=''):
                     if not any(b in blob for b in ['logo','favicon','social','brand']):return cand
         except:pass
     return ''
-
-def resolve(h):
-    if not h:return ''
-    if h.startswith('//'):h='https:'+h
-    try:
-        q=parse_qs(urlparse(h).query)
-        if q.get('uddg'):return unquote(q['uddg'][0])
-    except:pass
-    return h
-
-def search(q,n=16):
-    try:
-        r=requests.get('https://html.duckduckgo.com/html/?q='+quote_plus(q),headers=HEADERS,timeout=(3,9));r.raise_for_status();s=BeautifulSoup(r.text,'html.parser');out=[]
-        for x in s.select('.result'):
-            a=x.select_one('.result__a');sn=x.select_one('.result__snippet')
-            if a:out.append({'title':clean(a.get_text(' ',strip=True)),'snippet':clean(sn.get_text(' ',strip=True) if sn else ''),'url':resolve(a.get('href',''))})
-            if len(out)>=n:break
-        return out
-    except:return []
 
 def score(year,km,vinv=''):
     y,k=num(year),num(km)
@@ -237,7 +257,7 @@ def from_snippet(r,key,fg,current):
     if not u or u.rstrip('/')==(current or '').rstrip('/') or alow(key) not in alow(blob):return None
     g=fuel_group(fuel(blob) or fuel(u))
     if fg and g and g!=fg:return None
-    ym=re.search(r'\b(20[0-3]\d)\b',blob);pm=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*(?:€|EUR)\b',blob,re.I);kk=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,7})\s*km\b',blob,re.I)
+    ym=re.search(r'\b(20[0-3]\d)\b',blob);pm=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*(?:€|EUR)',blob,re.I);kk=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,7})\s*km\b',blob,re.I)
     if not(ym and pm and kk):return None
     p,k=num(pm.group(1)),num(kk.group(1));y=ym.group(1)
     return {'title':key,'year':y,'km':kms(k),'price':eur(p),'fuel':fuel(blob),'score':score(y,k),'url':u,'source':source(u)} if valid_price(p) and 0<k<=1000000 else None
