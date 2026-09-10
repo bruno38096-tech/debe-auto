@@ -59,7 +59,13 @@ def vin(t):
 
 def engine_hint(t,url=''):
     x=clean(title_line(t)+' '+field(t,'Versão')+' '+field(t,'Motor')+' '+url)
-    pats=[r'\b\d[.,]\d\s*TDI\s*\d{2,3}\s*(?:cv|hp)?',r'\b\d[.,]\d\s*TFSI\s*\d{2,3}\s*(?:cv|hp)?',r'\b50\s*TDI\b',r'\b45\s*TDI\b',r'\b40\s*TDI\b',r'\b55\s*TFSI\b',r'\b50\s*kWh\b',r'\b51\s*kWh\b',r'\b1[.,]2\s*(?:PureTech)?(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bPureTech\s*\d{2,3}\b',r'\b1[.,]5\s*BlueHDi(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bHybrid\s*\d{2,3}\b']
+    pats=[
+        r'\b\d[.,]\d\s*TDI\s*\d{2,3}\s*(?:cv|hp)?',r'\b\d[.,]\d\s*TFSI\s*\d{2,3}\s*(?:cv|hp)?',
+        r'\b50\s*TDI\b',r'\b45\s*TDI\b',r'\b40\s*TDI\b',r'\b55\s*TFSI\b',
+        r'\b50\s*kWh\b',r'\b51\s*kWh\b',
+        r'\b1[.,]2\s*(?:PureTech)?(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bPureTech\s*\d{2,3}\b',
+        r'\b1[.,]5\s*BlueHDi(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bHybrid\s*\d{2,3}\b'
+    ]
     for p in pats:
         m=re.search(p,x,re.I)
         if m:return clean(m.group(0)).replace(',','.')
@@ -107,8 +113,8 @@ def olx_model_from_title(raw):
     out=[]
     for p in base.split():
         lp=alow(p)
-        if re.fullmatch(r'[aqsret]{1,2}\d',lp): p=p[0].upper()+p[1:].upper()
-        elif lp in ['sportback','avant','touring','allroad','cabrio','coupe','sedan','sw']: p=p[:1].upper()+p[1:].lower()
+        if re.fullmatch(r'[aqsret]{1,2}\d',lp):p=p.upper()
+        elif lp in ['sportback','avant','touring','allroad','cabrio','coupe','sedan','sw']:p=p[:1].upper()+p[1:].lower()
         elif not out:p=p[:1].upper()+p[1:]
         out.append(p)
     return clean(' '.join(out))
@@ -125,13 +131,7 @@ def olx_fuel(raw,t):
 def direct_olx_price(url):
     try:
         r=requests.get(url,headers=HEADERS,timeout=(3,8));r.raise_for_status();txt=r.text
-        pats=[
-            r'"price"\s*:\s*"?([0-9]{4,6})"?',
-            r'"priceValue"\s*:\s*"?([0-9]{4,6})"?',
-            r'"amount"\s*:\s*"?([0-9]{4,6})"?',
-            r'([0-9]{1,3}(?:[ .][0-9]{3})+)\s*€'
-        ]
-        for p in pats:
+        for p in [r'"price"\s*:\s*"?([0-9]{4,6})"?',r'"priceValue"\s*:\s*"?([0-9]{4,6})"?',r'"amount"\s*:\s*"?([0-9]{4,6})"?',r'([0-9]{1,3}(?:[ .][0-9]{3})+)\s*€']:
             for m in re.finditer(p,txt,re.I):
                 n=num(m.group(1))
                 if valid_price(n):return n
@@ -140,8 +140,7 @@ def direct_olx_price(url):
 
 def search_olx_price(raw,url):
     title=re.sub(r'\s*[•|–-]\s*OLX\.?pt.*$','',clean(raw),flags=re.I)
-    q=f'"{title}" site:olx.pt'
-    for r in search(q,8):
+    for r in search(f'"{title}" site:olx.pt',8):
         blob=clean((r.get('title') or '')+' '+(r.get('snippet') or ''))
         m=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*€',blob,re.I)
         if m and valid_price(num(m.group(1))):return num(m.group(1))
@@ -185,26 +184,30 @@ def parse_listing(t,u):
     return parse_generic(t,u)
 
 def safe_listing_image(url,text,model=''):
+    host=urlparse(url).netloc.lower()
+    tokens=[x for x in re.split(r'\W+',alow(model)) if len(x)>2]
     candidates=[]
     for alt,href in re.findall(r'!\[([^\]]*)\]\((https?://[^)\s]+)',text or '',re.I):
         blob=alow(alt+' '+href)
-        if any(b in blob for b in ['logo','favicon','sprite','avatar','credibom','pisca-pisca','pisca pisca','facebook','instagram','dealer','stand logo']):continue
-        sv=0
-        for token in [x for x in re.split(r'\W+',alow(model)) if len(x)>2]:
-            if token in blob:sv+=3
+        if any(b in blob for b in ['logo','favicon','sprite','avatar','credibom','pisca-pisca','pisca pisca','facebook','instagram','dealer','stand logo','weather','cloud','sky']):continue
+        matched=sum(1 for token in tokens if token in blob)
+        sv=matched*3
         if any(x in blob for x in ['jpg','jpeg','webp','vehicle','carro','auto','image']):sv+=1
-        candidates.append((sv,href))
+        candidates.append((sv,matched,href))
     if candidates:
         candidates.sort(key=lambda x:-x[0])
-        if candidates[0][0]>=2:return candidates[0][1]
-    if 'piscapisca.pt' not in url.lower():
+        best=candidates[0]
+        min_matches=2 if 'olx.pt' in host else 1
+        if best[1] >= min_matches and best[0] >= 4:return best[2]
+    # og:image is too permissive on OLX/Pisca; it can be a generic social/branding image.
+    if 'olx.pt' not in host and 'piscapisca.pt' not in host:
         try:
             r=requests.get(url,headers=HEADERS,timeout=(3,8));r.raise_for_status();s=BeautifulSoup(r.text,'html.parser')
             for q in ['meta[property="og:image"]','meta[name="twitter:image"]']:
                 tag=s.select_one(q)
                 if tag and tag.get('content'):
                     cand=urljoin(url,tag['content']);blob=alow(cand)
-                    if not any(b in blob for b in ['logo','favicon','social','brand']):return cand
+                    if not any(b in blob for b in ['logo','favicon','social','brand','weather','cloud','sky']):return cand
         except:pass
     return ''
 
@@ -290,17 +293,41 @@ def discover(model,motor,current='',limit=4):
     return ded[:limit]
 
 def known_profile(model,engine,year,fuelv):
-    x=alow(model+' '+engine+' '+fuelv);fg=fuel_group(fuelv)
+    x=alow(model+' '+engine+' '+fuelv);fg=fuel_group(fuelv);y=num(year)
     if 'peugeot 2008' in x and fg=='gasoline':
         return {'strengths':['2008 II: conforto, posição de condução elevada e boa eficiência são aspetos geralmente valorizados.','Num exemplar recente, o risco de desgaste acumulado é menor; histórico de revisões continua decisivo.','Com quilometragem moderada, o foco deve estar na manutenção correta do 1.2 PureTech.'],'issues':['1.2 PureTech: confirmar variante do sistema de distribuição; séries anteriores ficaram associadas à degradação da correia banhada em óleo.','Verificar consumo de óleo e histórico de lubrificação, um ponto reportado em determinadas séries PureTech.','Confirmar pelo VIN todas as campanhas técnicas/recalls aplicáveis.'],'checks':[{'title':'Distribuição','detail':'Confirmar solução instalada e manutenção prevista.'},{'title':'Óleo e lubrificação','detail':'Verificar faturas, especificação de óleo e consumo anormal.'},{'title':'Campanhas técnicas','detail':'Confirmar na Peugeot pelo VIN.'}],'sources':['Peugeot/Stellantis — campanhas por VIN','Imprensa automóvel especializada — histórico PureTech','Bases de recalls e feedback de proprietários'],'research_score':64,'engine_focus':engine or '1.2 PureTech'}
     if ('peugeot e-208' in x or 'peugeot e208' in x) and fg=='electric':
         return {'strengths':['Condução silenciosa, resposta imediata e facilidade de utilização urbana são pontos fortes frequentes do e-208.','A plataforma elétrica Stellantis tem ampla rede de assistência e conhecimento técnico.','Unidades mais recentes beneficiam de atualizações face às primeiras séries.'],'issues':['Validar eletrónica/software: existem relatos de avisos elétricos e campanhas ligadas à gestão da bateria/propulsão.','Em algumas séries foram reportados problemas de carregamento/carregador de bordo; testar AC e DC.','Confirmar saúde da bateria de tração e bateria de 12 V com diagnóstico.'],'checks':[{'title':'Carregamento AC/DC','detail':'Testar carga sem erros.'},{'title':'Bateria e diagnóstico','detail':'Pedir estado da bateria e leitura de erros.'},{'title':'Recalls e software','detail':'Confirmar campanhas pelo VIN.'}],'sources':['What Car? — e-208 reliability','Stellantis/Peugeot — campanhas técnicas','Bases oficiais de recalls'],'research_score':72,'engine_focus':engine or '50 kWh elétrico'}
+    if 'audi a3' in x and fg=='diesel' and ('2.0 tdi' in x or '2.0tdi' in x or '150cv' in x or '150 cv' in x):
+        return {
+            'strengths':[
+                'O A3 8V 2.0 TDI 150 usa a família EA288, muito difundida no Grupo VW; em utilização de estrada é conhecida por bom binário, consumos contidos e facilidade de assistência especializada.',
+                'O ano 2018 corresponde à fase pós-facelift do A3 8V, já com várias revisões face às primeiras unidades da geração.',
+                'Com manutenção documentada, o 2.0 TDI 150 é uma configuração particularmente adequada a percursos longos; o risco aumenta quando o histórico é sobretudo urbano e com regenerações incompletas.'
+            ],
+            'issues':[
+                'DPF e EGR: há relatos recorrentes de saturação do filtro de partículas e problemas no circuito EGR em carros usados sobretudo em trajetos curtos. Procurar avisos, regenerações frequentes, perda de potência e historial de intervenções.',
+                'Sistema de refrigeração: nesta família são reportadas fugas na bomba de água/caixa do termóstato. Confirmar nível de refrigerante, resíduos secos e histórico de substituição.',
+                'Euro 6 / SCR-AdBlue: em exemplares desta fase podem surgir falhas de sensores ou do sistema SCR/AdBlue. Confirmar ausência de avisos, códigos de erro e campanhas pendentes pelo VIN.'
+            ],
+            'checks':[
+                {'title':'DPF e EGR','detail':'Fazer diagnóstico: carga de fuligem/cinzas do DPF, distância desde a última regeneração e erros EGR. Perguntar pelo tipo de utilização anterior.'},
+                {'title':'Refrigeração e distribuição','detail':'Verificar fugas na bomba/termóstato e confirmar documentalmente manutenção da distribuição/bomba de água de acordo com a variante e plano Audi.'},
+                {'title':'AdBlue/SCR e diagnóstico','detail':'Ler erros de emissões/SCR, confirmar funcionamento do AdBlue e verificar campanhas técnicas através do VIN.'}
+            ],
+            'sources':['Audi/VAG — dados técnicos EA288 e campanhas por VIN','Guias de compra Audi A3 8V — DPF/EGR e refrigeração','Relatos técnicos e comunidades VAG sobre 2.0 TDI/DQ250'],
+            'research_score':70,
+            'engine_focus':engine or '2.0 TDI 150 cv',
+            'generation':'Audi A3 8V'
+        }
     return None
 
 def evidence_profile(model,engine,year,fuelv):
-    q=' '.join(x for x in [model,engine,fuelv] if x);rows=[]
-    for qq in [f'"{q}" common problems recall reliability',f'"{q}" owner problems review',f'"{q}" problems engine battery gearbox']:
-        rows.extend(search(qq,8))
+    base=model_key(model);q=' '.join(x for x in [base,engine,fuelv] if x);rows=[]
+    variants=[q,clean(base+' '+engine),clean(base+' '+fuelv)]
+    for v in dict.fromkeys(x for x in variants if x):
+        for qq in [f'"{v}" common problems reliability',f'"{v}" owner problems recall',f'"{v}" DPF EGR gearbox engine battery']:
+            rows.extend(search(qq,8))
     blobs=[clean((r.get('title') or '')+'. '+(r.get('snippet') or '')) for r in rows];low=' '.join(alow(b) for b in blobs)
     issues=[];strengths=[];checks=[]
     def add(cond,text,title,detail):
@@ -308,10 +335,12 @@ def evidence_profile(model,engine,year,fuelv):
     add(any(k in low for k in ['timing belt','wet belt','correia','timing chain']),'Foram encontrados relatos sobre o sistema de distribuição nesta motorização.','Distribuição','Confirmar tipo, manutenção e campanhas pelo VIN.')
     add(any(k in low for k in ['oil consumption','consumo de oleo','low oil pressure']),'Existem referências a consumo/lubrificação nesta motorização.','Lubrificação','Rever faturas, óleo e sinais de consumo anormal.')
     add(any(k in low for k in ['onboard charger','charging fault','carregador']),'Foram encontrados relatos ligados ao carregamento/carregador de bordo.','Carregamento','Testar AC/DC e diagnóstico.')
-    add(any(k in low for k in ['dpf','egr']),'Há referências a DPF/EGR nesta motorização.','DPF / EGR','Verificar regenerações, avisos e histórico.')
-    add(any(k in low for k in ['gearbox','transmission','clutch']),'Foram encontrados relatos ligados à transmissão/embraiagem.','Transmissão','Testar a frio e quente.')
-    if any(k in low for k in ['reliable','generally reliable']):strengths.append('As fontes encontradas descrevem esta versão como globalmente fiável, com pontos específicos a validar.')
-    if any(k in low for k in ['efficient','efficiency','economical']):strengths.append('Eficiência aparece como um dos aspetos positivos desta configuração.')
+    add(any(k in low for k in ['dpf','egr']),'Há referências recorrentes a DPF/EGR nesta motorização, sobretudo em utilização urbana.','DPF / EGR','Verificar regenerações, carga do filtro, avisos e histórico.')
+    add(any(k in low for k in ['adblue','scr','nox sensor']),'Foram encontradas referências ao sistema AdBlue/SCR/sensores NOx.','AdBlue / SCR','Ler códigos de erro e confirmar ausência de avisos/campanhas pendentes.')
+    add(any(k in low for k in ['water pump','thermostat','coolant leak']),'Foram encontrados relatos de fugas no circuito de refrigeração/bomba de água/termóstato.','Refrigeração','Verificar perdas de líquido, resíduos e histórico de reparação.')
+    add(any(k in low for k in ['gearbox','transmission','clutch','dsg','s tronic']),'Foram encontrados relatos ligados à transmissão/embraiagem.','Transmissão','Testar a frio e quente e confirmar manutenção aplicável.')
+    if any(k in low for k in ['reliable','generally reliable','dependable']):strengths.append('As fontes encontradas descrevem esta versão como globalmente sólida quando a manutenção é cumprida, com pontos específicos a validar.')
+    if any(k in low for k in ['efficient','efficiency','economical','mpg','fuel economy']):strengths.append('Eficiência/consumo aparece como um dos aspetos positivos desta configuração.')
     if any(k in low for k in ['comfort','comfortable','refined','smooth']):strengths.append('Conforto e suavidade estão entre os aspetos positivos mais referidos.')
     if not issues:issues=['Não foi encontrada evidência pública suficientemente consistente para listar um problema recorrente específico desta motorização.']
     if not strengths:strengths=['Não foi encontrada evidência pública suficientemente consistente para atribuir um ponto forte técnico específico desta motorização.']
