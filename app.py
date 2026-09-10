@@ -31,11 +31,20 @@ def field(t,label):
 def fuel(t):
     x=alow(t)
     if 'plug-in' in x or 'plug in' in x or 'phev' in x:return 'Híbrido Plug-in'
-    if 'hybrid' in x or 'hibrid' in x:return 'Híbrido'
-    if 'eletric' in x or 'electric' in x:return 'Elétrico'
     if any(k in x for k in ['diesel','bluehdi','tdi','dci']):return 'Diesel'
     if any(k in x for k in ['gasolina','petrol','puretech','tsi','tfsi']):return 'Gasolina'
+    if 'hybrid' in x or 'hibrid' in x:return 'Híbrido'
+    if 'eletric' in x or 'electric' in x:return 'Elétrico'
     return ''
+
+def fuel_from_primary(primary, fallback=''):
+    x=alow(primary)
+    if 'plug-in' in x or 'plug in' in x or 'phev' in x:return 'Híbrido Plug-in'
+    if any(k in x for k in ['tdi','diesel','bluehdi','dci','hdi']):return 'Diesel'
+    if any(k in x for k in ['tfsi','tsi','gasolina','petrol','puretech']):return 'Gasolina'
+    if any(k in x for k in ['e-208','electric','eletrico','elétrico','kwh']):return 'Elétrico'
+    if 'hybrid' in x or 'hibrid' in x:return 'Híbrido'
+    return fuel(fallback)
 
 def fuel_group(v):
     x=alow(v)
@@ -58,7 +67,10 @@ def engine_hint(t,url=''):
     pats=[r'\b\d[.,]\d\s*TDI\s*\d{2,3}\s*(?:cv|hp)?',r'\b\d[.,]\d\s*TFSI\s*\d{2,3}\s*(?:cv|hp)?',r'\b50\s*TDI\b',r'\b45\s*TDI\b',r'\b40\s*TDI\b',r'\b55\s*TFSI\b',r'\b50\s*kWh\b',r'\b51\s*kWh\b',r'\b1[.,]2\s*(?:PureTech)?(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bPureTech\s*\d{2,3}\b',r'\b1[.,]5\s*BlueHDi(?:\s*\d{2,3}\s*(?:cv|hp))?',r'\bHybrid\s*\d{2,3}\b']
     for p in pats:
         m=re.search(p,x,re.I)
-        if m:return clean(m.group(0)).replace(',','.')
+        if m:
+            z=clean(m.group(0)).replace(',','.')
+            z=re.sub(r'(?i)tdi','TDI',z);z=re.sub(r'(?i)tfsi','TFSI',z);z=re.sub(r'(?i)cv','cv',z)
+            return z
     return ''
 
 def valid_price(n):return 1000<=n<=1000000
@@ -71,7 +83,17 @@ def parse_pisca(t,url):
         mm=re.match(r'^(.*?)\s*-\s*(?:Usado|Usada)\b',raw,re.I);model=clean(mm.group(1)) if mm else raw
         ym=re.search(r'\s-\s(20\d{2})\s-\sPisca\s*Pisca',raw,re.I);pm=re.search(r'\s-\s([0-9 .]+)\s*€\s-',raw);kk=re.search(r'\s-\s([0-9 .]+)\s*Kms?\s*-',raw,re.I)
         year=ym.group(1) if ym else '';price=eur(num(pm.group(1))) if pm else '';km=kms(num(kk.group(1))) if kk else ''
-    return {'title':model or 'Veículo','year':year,'price':price,'km':km,'fuel':fuel(url) or fuel(field(t,'Combustível') or t[:3500]),'vin':vin(t),'engine':engine_hint(t,url)}
+    return {'title':model or 'Veículo','year':year,'price':price,'km':km,'fuel':fuel_from_primary(url+' '+raw,field(t,'Combustível') or t[:3500]),'vin':vin(t),'engine':engine_hint(t,url)}
+
+def pretty_model_name(s):
+    parts=clean(s).split();out=[]
+    for p in parts:
+        low=p.lower()
+        if re.fullmatch(r'[a-z]\d',low) or re.fullmatch(r'[a-z]\d{1,2}',low):out.append(low.upper())
+        elif low in ['suv','gt','gti','rs','rs3','amg']:out.append(low.upper())
+        elif low in ['sportback','allroad','avant','touring','cabrio','coupe','sedan','sw']:out.append(low.capitalize())
+        else:out.append(p[:1].upper()+p[1:] if p else p)
+    return ' '.join(out)
 
 def olx_model_from_title(raw):
     s=clean(raw)
@@ -79,12 +101,12 @@ def olx_model_from_title(raw):
     s=re.sub(r'\s*[•|–-]\s*OLX.*$','',s,flags=re.I)
     s=re.sub(r'[“\"].*?[”\"]',' ',s)
     s=clean(s)
-    stop=re.search(r'\s+(?:s[- ]?line|amg|m\s*pack|gt\s*line|r[- ]?line|fr|2[.,]0\s*tdi|1[.,]\d\s*(?:tdi|tsi|tfsi|dci|hdi|puretech)|\d{2,3}\s*cv|look\b)',s,re.I)
+    stop=re.search(r'\s+(?:s[- ]?line|amg|m\s*pack|gt\s*line|r[- ]?line|fr|\d[.,]\d\s*(?:tdi|tsi|tfsi|dci|hdi|puretech)|\d{2,3}\s*cv|look\b)',s,re.I)
     if stop:s=s[:stop.start()]
     parts=s.split()
     if len(parts)>=3 and alow(parts[2]) in ['sportback','avant','touring','allroad','cabrio','coupe','sedan','sw']:
-        return clean(' '.join(parts[:3]))
-    return clean(' '.join(parts[:2])) if len(parts)>=2 else s
+        return pretty_model_name(' '.join(parts[:3]))
+    return pretty_model_name(' '.join(parts[:2])) if len(parts)>=2 else pretty_model_name(s)
 
 def parse_olx(t,url):
     raw=title_line(t);model=olx_model_from_title(raw);h=t[:10000]
@@ -94,7 +116,10 @@ def parse_olx(t,url):
         cand=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,6})\s*(?:€|EUR)\b',blob or '',re.I)
         if cand and valid_price(num(cand.group(1))):pm=cand;break
     kk=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,7})\s*km\b',h,re.I) or re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+|[0-9]{4,7})\s*km\b',t,re.I)
-    return {'title':model or 'Veículo','year':ym.group(1) if ym else '','price':eur(num(pm.group(1))) if pm else '','km':kms(num(kk.group(1))) if kk else '','fuel':fuel(raw+' '+field(t,'Combustível')+' '+h),'vin':vin(t),'engine':engine_hint(t,url)}
+    listed_fuel=field(t,'Combustível') or field(t,'Combustivel')
+    motor=engine_hint(t,url)
+    detected=fuel_from_primary(raw+' '+motor,listed_fuel)
+    return {'title':model or 'Veículo','year':ym.group(1) if ym else '','price':eur(num(pm.group(1))) if pm else '','km':kms(num(kk.group(1))) if kk else '','fuel':detected,'vin':vin(t),'engine':motor}
 
 def parse_generic(t,url):
     b,m,v=field(t,'Marca'),field(t,'Modelo'),field(t,'Versão');raw=title_line(t)
@@ -112,7 +137,7 @@ def parse_generic(t,url):
             if cand and valid_price(num(cand.group(1))):pm=cand;break
         if pm:break
     kk=re.search(r'\b([0-9]{1,3}(?:[ .][0-9]{3})+)\s*km\b',t,re.I) or re.search(r'\b([0-9]{4,7})\s*km\b',t,re.I)
-    return {'title':title,'year':ym.group(1) if ym else '','price':eur(num(pm.group(1))) if pm else '','km':kms(num(kk.group(1))) if kk else '','fuel':fuel(url) or fuel(field(t,'Combustível') or h),'vin':vin(t),'engine':engine_hint(t,url)}
+    return {'title':title,'year':ym.group(1) if ym else '','price':eur(num(pm.group(1))) if pm else '','km':kms(num(kk.group(1))) if kk else '','fuel':fuel_from_primary(raw+' '+field(t,'Combustível'),h),'vin':vin(t),'engine':engine_hint(t,url)}
 
 def parse_listing(t,u):
     host=urlparse(u).netloc.lower()
