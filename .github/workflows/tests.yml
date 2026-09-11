@@ -17,3 +17,48 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run regression tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+  production-smoke:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Wait for Render auto-deploy
+        run: sleep 75
+      - name: Validate live Audi A5 research
+        run: |
+          python - <<'PY'
+          import json, time, urllib.parse, urllib.request
+
+          params=urllib.parse.urlencode({
+              'model':'Audi A5',
+              'engine':'2.0 TDI 190 cv',
+              'year':'2015',
+              'fuel':'Diesel',
+          })
+          url='https://debe-auto.onrender.com/api/research?'+params
+          last=None
+          for _ in range(3):
+              try:
+                  with urllib.request.urlopen(url, timeout=95) as r:
+                      data=json.load(r)
+                  last=data
+                  strengths=data.get('strengths') or []
+                  issues=data.get('issues') or []
+                  checks=data.get('checks') or []
+                  generic_strength=any('não permitem destacar' in x.lower() or 'não foi possível' in x.lower() for x in strengths)
+                  generic_issue=any('não permitem classificar' in x.lower() or 'não foi possível' in x.lower() for x in issues)
+                  assert len(strengths)>=2 and not generic_strength, strengths
+                  assert len(issues)>=1 and not generic_issue, issues
+                  assert len(checks)>=3, checks
+                  assert all('Recomenda-se' in x.get('detail','') for x in checks), checks
+                  print(json.dumps({'strengths':strengths,'issues':issues,'checks':checks},ensure_ascii=False,indent=2))
+                  break
+              except Exception as e:
+                  print('attempt failed:',repr(e))
+                  time.sleep(20)
+          else:
+              raise SystemExit('Live DEBE research smoke test failed: '+repr(last))
+          PY
