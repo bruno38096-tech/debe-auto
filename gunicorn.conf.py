@@ -22,6 +22,12 @@ def post_worker_init(worker):
 
         cloud_search = make_search(fast.search_web)
 
+        def research_search(query,n=10):
+            rows=cloud_search(query,n)
+            sample=' || '.join(debe_app.clean((r.get('title') or '')+' :: '+(r.get('snippet') or ''))[:220] for r in rows[:3])
+            print('DEBE sample:',debe_app.clean(query)[:70],'->',sample,flush=True)
+            return rows
+
         original_engine_hint = debe_app.engine_hint
         def robust_engine_hint(text, url=''):
             first=original_engine_hint(text,url)
@@ -52,7 +58,7 @@ def post_worker_init(worker):
             return d
         debe_app.parse_olx=robust_parse_olx
 
-        generic_research=make_research(cloud_search)
+        generic_research=make_research(research_search)
 
         def calibrated_score(year,km,vinv=''):
             y=debe_app.num(year);k=debe_app.num(km)
