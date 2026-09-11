@@ -1,8 +1,8 @@
 """Search resilience for DEBE.
 
-The application currently queries DuckDuckGo HTML. Cloud IPs can receive empty
-or blocked SERPs, so this module transparently retries through other providers
-and returns the same HTML shape that app.py already parses.
+DEBE queries DuckDuckGo HTML. Cloud IPs can receive empty/blocked SERPs, so
+this layer transparently retries via Bing, Yahoo and Jina while returning the
+same HTML shape that app.py already parses.
 """
 
 import html
@@ -12,7 +12,8 @@ from urllib.parse import parse_qs, quote_plus, urlparse
 import requests
 from bs4 import BeautifulSoup
 
-_ORIGINAL_GET = requests.get
+_EXISTING_GET = requests.get
+_ORIGINAL_GET = getattr(_EXISTING_GET, '_debe_original_get', _EXISTING_GET)
 
 
 class _SyntheticResponse:
@@ -47,19 +48,13 @@ def _to_duck_html(results):
 
 
 def _bing_serp(query, headers=None, timeout=None, limit=16):
-    """Use Bing's normal HTML SERP and normalize it to DuckDuckGo's shape."""
     try:
         url = 'https://www.bing.com/search?q=' + quote_plus(query) + '&count=20&setlang=en'
-        r = _ORIGINAL_GET(
-            url,
-            headers=headers or {'User-Agent': 'Mozilla/5.0'},
-            timeout=timeout or (4, 12),
-        )
+        r = _ORIGINAL_GET(url, headers=headers or {'User-Agent': 'Mozilla/5.0'}, timeout=timeout or (4, 12))
         if r.status_code != 200 or not r.text:
             return None
         soup = BeautifulSoup(r.text, 'html.parser')
-        out = []
-        seen = set()
+        out, seen = [], set()
         for item in soup.select('li.b_algo'):
             a = item.select_one('h2 a')
             if not a or not a.get('href'):
@@ -75,26 +70,19 @@ def _bing_serp(query, headers=None, timeout=None, limit=16):
                 out.append((title, target, snippet))
             if len(out) >= limit:
                 break
-        if out:
-            return _SyntheticResponse(_to_duck_html(out), 200, url)
+        return _SyntheticResponse(_to_duck_html(out), 200, url) if out else None
     except Exception:
-        pass
-    return None
+        return None
 
 
 def _yahoo_serp(query, headers=None, timeout=None, limit=16):
     try:
         url = 'https://search.yahoo.com/search?p=' + quote_plus(query)
-        r = _ORIGINAL_GET(
-            url,
-            headers=headers or {'User-Agent': 'Mozilla/5.0'},
-            timeout=timeout or (4, 12),
-        )
+        r = _ORIGINAL_GET(url, headers=headers or {'User-Agent': 'Mozilla/5.0'}, timeout=timeout or (4, 12))
         if r.status_code != 200 or not r.text:
             return None
         soup = BeautifulSoup(r.text, 'html.parser')
-        out = []
-        seen = set()
+        out, seen = [], set()
         for item in soup.select('#web ol li, .algo'):
             a = item.select_one('h3 a') or item.select_one('a')
             if not a or not a.get('href'):
@@ -110,16 +98,13 @@ def _yahoo_serp(query, headers=None, timeout=None, limit=16):
                 out.append((title, target, snippet))
             if len(out) >= limit:
                 break
-        if out:
-            return _SyntheticResponse(_to_duck_html(out), 200, url)
+        return _SyntheticResponse(_to_duck_html(out), 200, url) if out else None
     except Exception:
-        pass
-    return None
+        return None
 
 
 def _jina_links(markdown, limit=16):
-    out = []
-    seen = set()
+    out, seen = [], set()
     pattern = re.compile(r'\[([^\]\n]{3,220})\]\((https?://[^)\s]+)\)', re.I)
     for match in pattern.finditer(markdown or ''):
         title = _clean(match.group(1))
@@ -140,17 +125,12 @@ def _jina_links(markdown, limit=16):
 
 
 def _jina_serp(query, headers=None, timeout=None):
-    targets = [
+    for target in [
         'https://r.jina.ai/https://www.bing.com/search?q=' + quote_plus(query),
         'https://r.jina.ai/https://www.google.com/search?q=' + quote_plus(query) + '&num=10&hl=en',
-    ]
-    for target in targets:
+    ]:
         try:
-            r = _ORIGINAL_GET(
-                target,
-                headers=headers or {'User-Agent': 'Mozilla/5.0'},
-                timeout=timeout or (4, 16),
-            )
+            r = _ORIGINAL_GET(target, headers=headers or {'User-Agent': 'Mozilla/5.0'}, timeout=timeout or (4, 16))
             if r.status_code != 200 or not r.text:
                 continue
             results = _jina_links(r.text)
@@ -180,8 +160,7 @@ def _resilient_get(url, *args, **kwargs):
         query = ''
 
     if query:
-        headers = kwargs.get('headers')
-        timeout = kwargs.get('timeout')
+        headers, timeout = kwargs.get('headers'), kwargs.get('timeout')
         for provider in (_bing_serp, _yahoo_serp, _jina_serp):
             fallback = provider(query, headers=headers, timeout=timeout)
             if fallback is not None and 'result__a' in fallback.text:
@@ -192,4 +171,6 @@ def _resilient_get(url, *args, **kwargs):
     return _ORIGINAL_GET(url, *args, **kwargs)
 
 
+_resilient_get._debe_search_resilience = True
+_resilient_get._debe_original_get = _ORIGINAL_GET
 requests.get = _resilient_get
