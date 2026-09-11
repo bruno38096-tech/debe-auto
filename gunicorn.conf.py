@@ -12,9 +12,9 @@ def on_starting(server):
 def post_worker_init(worker):
     try:
         import app as debe_app
-        from debe_runtime import dynamic_research, search_web
+        from debe_runtime_fast import dynamic_research, search_web
         debe_app.dynamic_research = dynamic_research
         debe_app.search = search_web
-        print('DEBE runtime: generic research engine active', flush=True)
+        print('DEBE runtime: fast generic research engine active', flush=True)
     except Exception as e:
         print('DEBE runtime worker patch failed:', e, flush=True)
