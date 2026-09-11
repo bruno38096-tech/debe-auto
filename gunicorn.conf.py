@@ -11,7 +11,6 @@ def on_starting(server):
 
 def post_worker_init(worker):
     try:
-        import threading
         import app as debe_app
         import debe_runtime_fast as fast
         from debe_search_providers import make_search
@@ -28,15 +27,5 @@ def post_worker_init(worker):
         debe_app.dynamic_research = logged_research
         debe_app.search = cloud_search
         print('DEBE runtime: generic research v2 active', flush=True)
-
-        # One beta self-test only; it runs the same path as a real request and
-        # does not consume an extra provider call first.
-        def selftest():
-            try:
-                result=generic_research('Audi A4','2.0 TDI 170cv','2006','Diesel')
-                print('DEBE research selftest: results=',result.get('search_results'),'relevant=',result.get('relevant_sources'),'evidence=',result.get('evidence'),'issues=',result.get('issues'),flush=True)
-            except Exception as e:
-                print('DEBE research selftest failed:',repr(e),flush=True)
-        threading.Thread(target=selftest,daemon=True).start()
     except Exception as e:
         print('DEBE runtime worker patch failed:', e, flush=True)
