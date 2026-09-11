@@ -31,6 +31,9 @@ def post_worker_init(worker):
 
         def selftest():
             try:
+                q='Audi A4 2006 2.0 TDI 170 common problems faults injectors DPF EGR turbo oil pump'
+                rows=cloud_search(q,10)
+                print('DEBE sample rows:',[(r.get('title','')[:100],r.get('snippet','')[:140],r.get('url','')[:120]) for r in rows[:8]],flush=True)
                 result=generic_research('Audi A4','2.0 TDI 170cv','2006','Diesel')
                 print('DEBE research selftest: results=',result.get('search_results'),'relevant=',result.get('relevant_sources'),'evidence=',result.get('evidence'),'issues=',result.get('issues'),flush=True)
             except Exception as e:
