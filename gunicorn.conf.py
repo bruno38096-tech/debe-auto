@@ -23,9 +23,29 @@ def post_worker_init(worker):
         cloud_search = make_search(fast.search_web)
 
         def research_search(query,n=10):
-            rows=cloud_search(query,n)
+            original=query
+            qlow=(query or '').lower()
+            # Review searches with many descriptive words produced generic Audi
+            # home/dealer pages on Bing. Search the model identity + "review"
+            # first; the evidence engine classifies comfort/build/handling from
+            # the returned review snippets rather than from query keywords.
+            if 'review' in qlow:
+                quoted=re.findall(r'"([^"]{2,80})"',query or '')
+                identity=quoted[0] if quoted else ''
+                year_match=re.search(r'\b(20\d{2})\b',query or '')
+                if identity:
+                    simple=f'"{identity}" review'
+                    rows=cloud_search(simple,n)
+                    if len(rows)<3 and year_match:
+                        rows=debe_app.clean('') and rows or rows
+                        extra=cloud_search(f'"{identity}" {year_match.group(1)} review',n)
+                        rows=fast.dedup(rows+extra,n)
+                else:
+                    rows=cloud_search(query,n)
+            else:
+                rows=cloud_search(query,n)
             sample=' || '.join(debe_app.clean((r.get('title') or '')+' :: '+(r.get('snippet') or ''))[:220] for r in rows[:3])
-            print('DEBE sample:',debe_app.clean(query)[:70],'->',sample,flush=True)
+            print('DEBE sample:',debe_app.clean(original)[:70],'->',sample,flush=True)
             return rows
 
         original_engine_hint = debe_app.engine_hint
