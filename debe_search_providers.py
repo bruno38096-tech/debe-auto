@@ -3,12 +3,13 @@ Uses multiple public search surfaces because normal SERP HTML is often blocked
 for cloud IP addresses. No vehicle-specific knowledge is hardcoded here.
 """
 from urllib.parse import quote_plus, urlparse
-import html,re,requests
+import html,re,requests,unicodedata
 from bs4 import BeautifulSoup
 
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36','Accept-Language':'en-GB,en;q=0.9,pt;q=0.8'}
 S=requests.Session()
 def clean(s): return re.sub(r'\s+',' ',html.unescape(s or '')).strip()
+def alow(s): return unicodedata.normalize('NFKD',s or '').encode('ascii','ignore').decode().lower()
 
 def dedup(rows,n=12):
     out=[];seen=set();blocked=('bing.com','brave.com','mojeek.com','google.','duckduckgo.com','jina.ai')
@@ -91,18 +92,48 @@ def brave(q,n=8):
         return dedup(out,n)
     except Exception:return []
 
+# Search providers occasionally return unrelated popular pages while still
+# reporting a full result set. Require the quoted identity (e.g. "Audi A5" or
+# "2.0 TDI") to be present before those rows can stop the fallback chain.
+def _identity_terms(q):
+    quoted=re.findall(r'"([^"]{2,80})"',q or '')
+    phrase=quoted[0] if quoted else ''
+    toks=[x for x in re.findall(r'[a-z0-9]+',alow(phrase)) if len(x)>=2]
+    return toks
+
+def _relevant_rows(rows,q,n):
+    terms=_identity_terms(q)
+    if not terms:return dedup(rows,n)
+    out=[]
+    for r in rows:
+        blob=alow((r.get('title') or '')+' '+(r.get('snippet') or '')+' '+(r.get('url') or ''))
+        compact=re.sub(r'[^a-z0-9]+','',blob)
+        hits=0
+        for term in terms:
+            if term in blob or term in compact:hits+=1
+        # Two-token identities should match both. Longer identities may miss a
+        # trim/variant, so all but one is enough.
+        need=len(terms) if len(terms)<=2 else len(terms)-1
+        if hits>=need:out.append(r)
+    return dedup(out,n)
+
 def make_search(original_search=None):
     def search_web(q,n=10):
-        rows=[];counts={}
-        # Bing RSS is cheap; Jina-wrapped Brave is the primary technical fallback.
-        for name,fn in [('bing_rss',bing_rss),('brave_jina',brave_jina),('brave',brave),('reddit',reddit),('mojeek',mojeek)]:
-            if len(dedup(rows,n))>=max(7,min(n,9)):break
-            got=fn(q,n);counts[name]=len(got);rows.extend(got)
-        if len(dedup(rows,n))<4 and original_search:
+        rows=[];counts={};relevant_counts={}
+        providers=[('bing_rss',bing_rss),('brave_jina',brave_jina),('brave',brave),('reddit',reddit),('mojeek',mojeek)]
+        for name,fn in providers:
+            current=_relevant_rows(rows,q,n)
+            if len(current)>=max(6,min(n,8)):break
+            got=fn(q,n);counts[name]=len(got)
+            good=_relevant_rows(got,q,n);relevant_counts[name]=len(good)
+            rows.extend(good)
+        current=_relevant_rows(rows,q,n)
+        if len(current)<4 and original_search:
             try:
-                got=original_search(q,n);counts['legacy']=len(got);rows.extend(got)
-            except Exception:counts['legacy']=0
-        final=dedup(rows,n)
-        print('DEBE search:',clean(q)[:90],'providers=',counts,'final=',len(final),flush=True)
+                got=original_search(q,n);counts['legacy']=len(got)
+                good=_relevant_rows(got,q,n);relevant_counts['legacy']=len(good);rows.extend(good)
+            except Exception:counts['legacy']=0;relevant_counts['legacy']=0
+        final=_relevant_rows(rows,q,n)
+        print('DEBE search:',clean(q)[:90],'providers=',counts,'relevant=',relevant_counts,'final=',len(final),flush=True)
         return final
     return search_web
