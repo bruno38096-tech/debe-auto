@@ -17,7 +17,6 @@ def alow(s): return unicodedata.normalize('NFKD',s or '').encode('ascii','ignore
 def engine_variants(engine):
     e=clean(engine)
     low=alow(e).replace(',','.')
-    # Normalize Portuguese power suffixes so international sources can match.
     power=''
     m=re.search(r'\b(\d{2,3})\s*(?:cv|hp|bhp|ps)\b',low,re.I)
     if m: power=m.group(1)
@@ -41,25 +40,28 @@ def make_research(search_web):
         variants,power=engine_variants(engine)
         eng=variants[0] if variants else engine
         identity=clean(' '.join(x for x in [model,year,engine,fuel] if x))
-        neg='-site:audi.com -site:audiusa.com -site:bmw.com -site:mercedes-benz.com'
-        # Generic query families: model/year, engine family, owners/forums and positives.
+
+        # No hardcoded vehicle knowledge: build several broad query families.
+        # Avoid strict quoting and -site operators because RSS/cloud search
+        # providers often degrade badly with those operators.
         queries=[
-            clean(f'{model} {year} {eng} common problems faults injectors DPF EGR turbo oil pump {neg}'),
-            clean(f'{model} {eng} {power} known issues reliability forum owners {neg}'),
-            clean(f'{model} {year} {eng} injector turbo DPF EGR oil pressure problems {neg}'),
+            clean(f'{model} {year} {eng} common problems faults injectors DPF EGR turbo oil pump'),
+            clean(f'{model} {eng} {power} known issues reliability forum owners'),
+            clean(f'{model} {year} {eng} injector turbo DPF EGR oil pressure problems'),
+            clean(f'{eng} {power} common problems injectors turbo DPF EGR oil pump reliability'),
             clean(f'{model} {eng} review reliability fuel economy comfort performance'),
         ]
         rows=[]
-        with ThreadPoolExecutor(max_workers=4) as ex:
+        with ThreadPoolExecutor(max_workers=5) as ex:
             futs=[ex.submit(search_web,q,10) for q in queries]
             for f in as_completed(futs):
                 try: rows.extend(f.result())
                 except Exception: pass
-        rows=base.dedup(rows,22)
+        rows=base.dedup(rows,26)
 
         pages={}
-        with ThreadPoolExecutor(max_workers=6) as ex:
-            jobs={ex.submit(read_page,r.get('url','')):r.get('url','') for r in rows[:8] if r.get('url')}
+        with ThreadPoolExecutor(max_workers=7) as ex:
+            jobs={ex.submit(read_page,r.get('url','')):r.get('url','') for r in rows[:10] if r.get('url')}
             for f in as_completed(jobs):
                 try: pages[jobs[f]]=f.result()
                 except Exception: pages[jobs[f]]=''
@@ -71,10 +73,12 @@ def make_research(search_web):
             blob=alow(' '.join([r.get('title',''),r.get('snippet',''),pages.get(r.get('url',''),'')]))
             mh=sum(1 for t in mt if t in blob)
             eh=sum(1 for t in et if t in blob)
-            has_power=bool(power and power in blob)
+            has_power=bool(power and re.search(r'\b'+re.escape(power)+r'\b',blob))
             model_ok=mh>=max(1,min(2,len(mt)))
             engine_ok=(not et) or eh>=1
-            engine_specific=(et and eh>=max(1,min(2,len(et))) and (has_power or len(et)>=2))
+            # Engine-only technical articles are valid if they match the engine
+            # family and power even when they are not written for one model.
+            engine_specific=(bool(et) and eh>=1 and (has_power or eh>=2))
             if (model_ok and engine_ok) or engine_specific:
                 docs.append((r,blob))
 
@@ -86,9 +90,8 @@ def make_research(search_web):
                 if local:
                     matches.append(r);domains.add(urlparse(r.get('url','')).netloc.lower());hits.update(local)
             if matches:
-                # One highly specific source can be useful; independent domains increase confidence.
-                conf=min(96,50+16*min(2,len(domains))+6*min(4,len(hits))+4*min(3,len(matches)))
-                if conf>=62: issues.append((conf,label,text,check,matches))
+                conf=min(96,48+16*min(2,len(domains))+7*min(4,len(hits))+5*min(3,len(matches)))
+                if conf>=60: issues.append((conf,label,text,check,matches))
         issues.sort(key=lambda x:-x[0])
         outissues=[]
         for conf,label,text,check,matches in issues[:4]:
@@ -115,6 +118,6 @@ def make_research(search_web):
             'research_score':max([x['confidence'] for x in evidence],default=30),
             'engine_focus':engine,'research_available':bool(evidence),'identity_used':identity,
             'search_results':len(rows),'relevant_sources':len(docs),
-            'queries_used':queries[:4]
+            'queries_used':queries[:5]
         }
     return dynamic_research
