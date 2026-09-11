@@ -37,7 +37,7 @@
     $('issues').innerHTML = bullets(data.issues, 'Não foram encontrados problemas recorrentes com evidência suficiente.');
     $('checks').innerHTML = (data.checks || []).map(item =>
       '<p><b>' + esc(item.title) + '</b><br>' + esc(item.detail) + '</p>'
-    ).join('') || '<span class="muted">Faz uma inspeção independente e confirma o VIN.</span>';
+    ).join('') || '<span class="muted">Recomenda-se uma inspeção independente e a confirmação do VIN.</span>';
     const sources = (data.sources || []).filter(item => safeUrl(item.url));
     if (sources.length) $('checks').innerHTML += '<p><b>Fontes da pesquisa</b></p>' + sources.map(item =>
       '<p><a target="_blank" rel="noopener" href="' + esc(safeUrl(item.url)) + '">' + esc(item.title || 'Consultar fonte') + '</a></p>'
@@ -46,11 +46,11 @@
 
   function researchFailure(error) {
     const message = error && error.name === 'AbortError'
-      ? 'A pesquisa demorou mais do que o esperado. Tenta novamente.'
-      : 'Não foi possível concluir a pesquisa agora. Tenta novamente.';
+      ? 'A pesquisa demorou mais do que o esperado. Recomenda-se repetir a tentativa.'
+      : 'Não foi possível concluir a pesquisa neste momento. Recomenda-se repetir a tentativa.';
     $('strengths').innerHTML = '<span class="muted">' + message + '</span>';
     $('issues').innerHTML = '<span class="muted">' + message + '</span>';
-    $('checks').innerHTML = '<p><b>Inspeção e VIN</b><br>Confirma o VIN e faz uma inspeção independente antes da compra.</p>';
+    $('checks').innerHTML = '<p><b>Inspeção e VIN</b><br>Recomenda-se confirmar o VIN e realizar uma inspeção independente antes da compra.</p>';
   }
 
   function dealCard(deal) {
@@ -68,9 +68,9 @@
     let html = '';
     if (modelDeals.length) html += '<div class="dealGroupTitle">Mesmo modelo</div>' + modelDeals.map(dealCard).join('');
     if (budgetDeals.length) html += '<div class="dealGroupTitle budget">Mesmo orçamento</div>' + budgetDeals.map(dealCard).join('');
-    $('deals').innerHTML = html || '<div class="muted">Ainda não encontrei comparáveis suficientes.</div>';
+    $('deals').innerHTML = html || '<div class="muted">Ainda não foram encontrados comparáveis suficientes.</div>';
     if (deals.length < 4) $('deals').innerHTML += (data.search_links || []).filter(item => safeUrl(item.url)).map(item =>
-      '<p><a target="_blank" rel="noopener" href="' + esc(safeUrl(item.url)) + '">' + esc(item.title) + ' →</a><br><small>Pesquisa no marketplace; não é um anúncio validado.</small></p>'
+      '<p><a target="_blank" rel="noopener" href="' + esc(safeUrl(item.url)) + '">' + esc(item.title) + ' →</a><br><small>Pesquisa no marketplace; não corresponde a um anúncio validado.</small></p>'
     ).join('');
   }
 
@@ -101,7 +101,7 @@
 
   $('analyse').onclick = async () => {
     const url = safeUrl($('url').value.trim());
-    if (!url) { alert('Introduz um link válido do anúncio.'); return; }
+    if (!url) { alert('Deve ser introduzido um link válido do anúncio.'); return; }
     cancelPending();
     const run = generation;
     currentUrl = url;
@@ -116,7 +116,7 @@
       $('confirm').classList.remove('hidden');
       $('confirm').scrollIntoView({behavior: 'smooth'});
     } catch (error) {
-      if (run === generation) alert('Não foi possível ler este anúncio. Tenta novamente.');
+      if (run === generation) alert('Não foi possível ler este anúncio. Recomenda-se repetir a tentativa.');
     } finally { if (run === generation) setBusy('listing', false); }
   };
 
@@ -159,12 +159,10 @@
     const marketUrl = '/api/comparables?model=' + encodeURIComponent(model) + '&fuel=' + encodeURIComponent(fuel) +
       '&price=' + encodeURIComponent(price) + '&year=' + encodeURIComponent(year) + '&url=' + encodeURIComponent(currentUrl);
 
-    // Render independently: a slow marketplace search must never leave the
-    // strengths and issues stuck on "A pesquisar…".
     const researchTask = requestJson(researchUrl, 90000).then(data => { if (run === generation) renderResearch(data); }).catch(error => { if (run === generation) researchFailure(error); });
     const marketTask = requestJson(marketUrl, 90000).then(data => { if (run === generation) renderDeals(data); }).catch(() => {
       if (run !== generation) return;
-      $('deals').innerHTML = '<div class="muted">Não foi possível pesquisar comparáveis agora. Tenta novamente dentro de instantes.</div>';
+      $('deals').innerHTML = '<div class="muted">Não foi possível pesquisar comparáveis neste momento. Recomenda-se repetir a tentativa mais tarde.</div>';
     });
     await Promise.allSettled([researchTask, marketTask]);
     if (run === generation) setBusy('report', false);
