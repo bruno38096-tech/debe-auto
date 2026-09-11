@@ -3,6 +3,7 @@ import requests, re, html as htmllib, unicodedata
 from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urljoin, urlparse, parse_qs, unquote
 from datetime import datetime
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__, static_folder='.')
@@ -58,7 +59,34 @@ def engine_hint(t,url=''):
     for p in pats:
         m=re.search(p,x,re.I)
         if m:return clean(m.group(0)).replace(',','.')
+    # BMW marketplace URLs often keep the exact derivative (216, 330e, ...)
+    # even when the page's structured "Modelo" field only says "Série 2".
+    # Preserve that useful engine/model identifier for the technical research.
+    bm=re.search(r'(?:^|[/_-])bmw[-_ ]([1-8]\d{2})(?:[-_ ]|$)',url or '',re.I)
+    if bm:
+        suffix=''
+        if re.search(r'(?:^|[-_])(?:ver[-_])?d(?:[-_]|$)',url or '',re.I):suffix='d'
+        elif re.search(r'(?:^|[-_])(?:ver[-_])?e(?:[-_]|$)',url or '',re.I):suffix='e'
+        elif re.search(r'(?:^|[-_])(?:ver[-_])?i(?:[-_]|$)',url or '',re.I):suffix='i'
+        return bm.group(1)+suffix
     return ''
+
+def enrich_title_from_url(title,url):
+    """Restore model derivatives that marketplace structured data omits."""
+    out=clean(title)
+    if re.search(r'\bbmw\b',out,re.I):
+        bm=re.search(r'(?:^|[/_-])bmw[-_ ]([1-8]\d{2})(?:[-_ ]|$)',url or '',re.I)
+        if bm and not re.search(r'\b'+re.escape(bm.group(1))+r'[a-z]{0,2}\b',out,re.I):
+            derivative=engine_hint('',url) or bm.group(1)
+            series=re.search(r'\bS[eé]rie\s+([1-8])\b',out,re.I)
+            if series:
+                end=series.end()
+                out=clean(out[:end]+' '+derivative+' '+out[end:])
+            else:
+                out=clean(out+' '+derivative)
+            if derivative[-1:].lower() in {'d','e','i'}:
+                out=re.sub(r'\b'+re.escape(derivative)+r'\s+'+re.escape(derivative[-1])+r'\b',derivative,out,flags=re.I)
+    return out
 
 def resolve(h):
     if not h:return ''
@@ -145,7 +173,8 @@ def parse_generic(t,url):
     title=clean(' '.join(x for x in [b,m,v] if x)) or raw or 'Veículo'
     title=re.sub(r'\s*[|–-]\s*(Standvirtual|Pisca\s*Pisca).*$', '',title,flags=re.I)
     title=re.sub(r'\b(usado|usada|used)\b',' ',title,flags=re.I)
-    title=re.sub(r'^\s*\d[\d .]*\s*(?:€|EUR)\s*[-–|]\s*','',title,flags=re.I);title=clean(title).strip(' -|');h=t[:9000]
+    title=re.sub(r'^\s*\d[\d .]*\s*(?:€|EUR)\s*[-–|]\s*','',title,flags=re.I);title=clean(title).strip(' -|')
+    title=enrich_title_from_url(title,url);h=t[:9000]
     ym=re.search(r'\bAno\s*[:\n ]+\s*(20[0-3]\d)\b',h,re.I) or re.search(r'\b(20[0-3]\d)\b[^\n]{0,140}?\b(?:km|Autom[aá]tica|Manual)\b',h,re.I) or re.search(r'\b(?:Usado|Used)\b[^\n]{0,120}?\b(20[0-3]\d)\b',raw,re.I)
     pm=None
     for blob in [raw,h,t]:
@@ -190,7 +219,20 @@ def score(year,km,vinv=''):
     age=max(0,datetime.now().year-y);annual=k/max(1,age or 1);a=max(35,min(98,98-age*4.7));q=max(35,min(98,98-(annual/1000)*2.15));p=min(12,(k/100000)*6)
     return max(35,min(95,round(a*.52+q*.43+(5 if len(vinv or '')==17 else 0)-p)))
 def model_key(v):
-    p=clean(v).split();return ' '.join(p[:2]) if len(p)>=2 else clean(v)
+    """Return a stable make/model key without collapsing distinct model lines."""
+    value=clean(v);plain=alow(value)
+    if plain.startswith('bmw '):
+        derivative=re.search(r'\b([1-8]\d{2})[a-z]{0,2}\b',plain)
+        if derivative:return 'BMW '+derivative.group(1)
+        series=re.search(r'\bserie\s+([1-8])\b',plain)
+        if series:return 'BMW Série '+series.group(1)
+        named=re.search(r'\b(x[1-7]|i[3-8x][a-z0-9-]*|z4|m[2-8])\b',plain)
+        if named:return 'BMW '+named.group(1).upper()
+    # Most listings start with make + model. Keep a third token when the
+    # second one is a family word (Série, Classe, Range, ...).
+    p=value.split()
+    if len(p)>=3 and alow(p[1]) in {'serie','classe','range','model'}:return ' '.join(p[:3])
+    return ' '.join(p[:2]) if len(p)>=2 else value
 def source(u):
     if 'piscapisca.pt' in u:return 'PiscaPisca'
     if 'standvirtual' in u:return 'Standvirtual'
@@ -363,7 +405,13 @@ def dynamic_research(model,engine,year,fuelv):
             'research_available':bool(issue_hits or strength_hits),'identity_used':identity}
 
 @app.route('/')
-def home():return Response(open('index.html',encoding='utf-8').read(),mimetype='text/html')
+def home():
+    page=Path(__file__).with_name('index.html').read_text(encoding='utf-8')
+    frontend='<script src="/debe_frontend_v3.js"></script>'
+    if frontend not in page:page=page.replace('</body>',frontend+'</body>')
+    return Response(page,mimetype='text/html')
+@app.route('/debe_frontend_v3.js')
+def frontend_v3():return Response(Path(__file__).with_name('debe_frontend_v3.js').read_text(encoding='utf-8'),mimetype='application/javascript')
 @app.route('/api/listing')
 def listing():
     u=request.args.get('url','').strip()

@@ -5,7 +5,7 @@ Returns two useful comparison groups:
 No vehicle-specific catalog is hardcoded.
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote_plus
 import re
 from flask import request, jsonify
 
@@ -17,8 +17,12 @@ def _n(v):
     except:return 0
 
 def _market_url(u):
-    h=urlparse(u or '').netloc.lower()
-    return bool(h and any(x in h for x in MARKET_HINTS))
+    parsed=urlparse(u or '');h=parsed.hostname or '';p=parsed.path.lower()
+    if not any(h==x or h.endswith('.'+x) for x in MARKET_HINTS):return False
+    if 'standvirtual' in h:return '/anuncio/' in p
+    if 'piscapisca' in h:return '/carros/usados/' in p
+    if 'olx' in h:return '/anuncio/' in p
+    return bool(re.search(r'-\d{6,}/?$',p))
 
 def _key(appmod,title):
     try:return appmod.model_key(title).lower()
@@ -71,21 +75,25 @@ def _same_model(appmod,model,fuel,year,price,current):
     # explicitly mention the era. This avoids comparing a 2006 A4 with a 2023 A4
     # unless no closer examples exist.
     base=[]
-    try:base=appmod.discover(model,fuel,current,limit=12) or []
+    try:
+        category=appmod.pisca_category_url(key)
+        if category:
+            base=appmod.parse_pisca_category(appmod.fetch_text(category),key,appmod.fuel_group(fuel),current,12)
     except Exception:base=[]
     for d in base:
         d['_price']=_n(d.get('price'));d['_year']=_n(d.get('year'))
 
-    yrange=''
-    if target_y:yrange=f'{max(1990,target_y-4)} {min(2035,target_y+4)}'
+    # Use the target year, not two range endpoints interpreted as required words.
     queries=[
-        f'{key} {yrange} {ft} usado Portugal',
-        f'{key} {target_y or ""} {ft} OLX PiscaPisca Standvirtual',
+        f'site:olx.pt/d/anuncio/ "{key}" {target_y or ""} {ft}',
+        f'site:standvirtual.com/carros/anuncio/ "{key}" {target_y or ""}',
     ]
-    extra=_fetch_many(appmod,_collect_urls(appmod,queries,14),5)
+    extra=_fetch_many(appmod,_collect_urls(appmod,queries,8),4)
     candidates=_dedup(base+extra,current)
     target_key=_key(appmod,key)
-    candidates=[d for d in candidates if _key(appmod,d.get('title'))==target_key]
+    fg=appmod.fuel_group(fuel)
+    candidates=[d for d in candidates if _key(appmod,d.get('title'))==target_key
+                and (not fg or appmod.fuel_group(d.get('fuel'))==fg)]
 
     def rank(d):
         yd=abs((d.get('_year') or target_y or 0)-(target_y or d.get('_year') or 0)) if target_y else 0
@@ -93,7 +101,7 @@ def _same_model(appmod,model,fuel,year,price,current):
         return (yd,pd,-int(d.get('score') or 0))
     candidates.sort(key=rank)
     close=[d for d in candidates if not target_y or abs((d.get('_year') or target_y)-target_y)<=6]
-    chosen=(close if len(close)>=2 else candidates)[:2]
+    chosen=close[:2]
     for d in chosen:
         d['group']='model';d['why']='Mesmo modelo'+(f' · {abs(d["_year"]-target_y)} ano(s) de diferença' if target_y and d.get('_year') else '')
     return chosen
@@ -103,11 +111,11 @@ def _same_budget(appmod,model,fuel,year,price,current,exclude_urls):
     if not target:return []
     tol=max(1800,int(target*.22));low=max(1000,target-tol);high=target+tol
     queries=[
-        f'carro usado {low} {high} euros {ft} Portugal',
-        f'automóvel usado {target} euros Portugal OLX PiscaPisca Standvirtual',
-        f'carro usado preço {target} {ft} Portugal',
+        f'site:olx.pt/d/anuncio/ carro {ft} "{target}"',
+        f'site:standvirtual.com/carros/anuncio/ {ft} "{target}"',
+        f'site:piscapisca.pt/carros/usados/ {ft} "{target}"',
     ]
-    urls=_collect_urls(appmod,queries,24)
+    urls=_collect_urls(appmod,queries,8)
     deals=_dedup(_fetch_many(appmod,urls,6),current)
     blocked=set(exclude_urls or [])
     deals=[d for d in deals if d.get('url') not in blocked and low<=d.get('_price',0)<=high]
@@ -140,11 +148,17 @@ def make_view(appmod):
         model=_clean(request.args.get('model'));fuel=_clean(request.args.get('fuel'));current=_clean(request.args.get('url'))
         price=_clean(request.args.get('price'));year=_clean(request.args.get('year'))
         if len(model)<2:return jsonify(ok=False,error='Modelo inválido'),400
-        same=_same_model(appmod,model,fuel,year,price,current)
-        budget=_same_budget(appmod,model,fuel,year,price,current,[d.get('url') for d in same])
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            model_job=ex.submit(_same_model,appmod,model,fuel,year,price,current)
+            budget_job=ex.submit(_same_budget,appmod,model,fuel,year,price,current,[])
+            same=model_job.result();budget=budget_job.result()
+        used={d['url'].split('?')[0].rstrip('/') for d in same}
+        budget=[d for d in budget if d['url'].split('?')[0].rstrip('/') not in used]
         deals=same+budget
         # Strip internal ranking fields from API output.
         for d in deals:
             d.pop('_price',None);d.pop('_year',None)
-        return jsonify(ok=True,deals=deals,same_model=same[:2],same_budget=budget[:2],count=len(deals))
+        searches=[{'title':'Pesquisar o mesmo modelo','url':'https://www.olx.pt/carros-motos-e-barcos/carros/q-'+quote_plus(model)+'/'},
+                  {'title':'Pesquisar carros neste orçamento','url':'https://www.olx.pt/carros-motos-e-barcos/carros/?search%5Bfilter_float_price%3Ato%5D='+str(_n(price))}]
+        return jsonify(ok=True,deals=deals,same_model=same[:2],same_budget=budget[:2],count=len(deals),search_links=searches)
     return comparables_v2
