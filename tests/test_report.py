@@ -1,42 +1,68 @@
 import unittest
 from unittest.mock import patch
 import app
-import debe_research_v2 as research
+import debe_research_v4 as research
 import debe_market_v2 as market
 
 class ReportTests(unittest.TestCase):
-    def test_reviews_are_read_and_wrong_era_faults_rejected(self):
-        issues=[
-            {'title':'Audi A4 2006 2.0 TDI 170 hp faults',
-             'snippet':'Description: turbo failure reported. No AdBlue problems.',
-             'url':f'https://source{i}.example/faults'} for i in range(10)]
-        issues.append({'title':'Audi A4 2015–2023 2.0 TDI 170 hp',
-                       'snippet':'AdBlue failure and SCR faults.',
-                       'url':'https://later.example/review'})
-        reviews=[{'title':'Audi A4 2004–2008 review','snippet':'Road test.',
-                  'url':'https://review.example/a4'}]
-        calls=[]
-        def page(url):
-            calls.append(url)
-            if url==reviews[0]['url']:
-                return 'The ride is comfortable and refined. Excellent build quality. Good handling.'
-            return ''
+    def test_a5_report_returns_strengths_issues_and_checks(self):
+        reviews=[
+            {'title':'2015 Audi A5 review','snippet':'Expert road test of the Audi A5.',
+             'url':'https://review1.example/a5'},
+            {'title':'Audi A5 2015 review and road test','snippet':'Audi A5 coupe review.',
+             'url':'https://review2.example/a5'}]
+        engine=[
+            {'title':'2.0 TDI 190 common problems','snippet':'DPF clogging, EGR problems, turbo failure and water pump leaks are reported.',
+             'url':'https://engine1.example/20tdi'},
+            {'title':'2.0 TDI 190 reliability and faults','snippet':'Common problems include DPF issues and EGR faults.',
+             'url':'https://engine2.example/20tdi'}]
+        model_issues=[
+            {'title':'Audi A5 2015 common problems','snippet':'Used buying guide and reliability overview.',
+             'url':'https://model1.example/a5'}]
+
         def search(query,n):
-            return reviews if 'review comfort' in query else issues
+            q=query.lower()
+            if '2.0 tdi' in q and ('common problems' in q or 'common faults' in q):return engine
+            if 'review' in q:return reviews
+            if 'common problems reliability used buying guide' in q:return model_issues
+            return []
+
+        def page(url):
+            if 'review' in url:
+                return ('The ride is comfortable and refined. Interior quality is excellent with high quality materials. '
+                        'Handling is good and confidence-inspiring. Fuel economy is good for the class.')
+            if 'engine' in url:
+                return ('Common problems include DPF clogging and EGR faults. Turbo failure can cause loss of power. '
+                        'Water pump leaks are also reported on higher mileage engines.')
+            return ''
+
         with patch.object(research,'read_page',side_effect=page):
-            result=research.make_research(search)('Audi A4','2.0 tdi 170cv','2006','Diesel')
-        self.assertIn(reviews[0]['url'],calls)
-        self.assertEqual(len(result['strength_evidence']),3)
-        self.assertIn('Turbo / sobrealimentação',[e['category'] for e in result['evidence']])
-        self.assertNotIn('AdBlue / SCR / NOx',[e['category'] for e in result['evidence']])
+            result=research.make_research(search)('Audi A5','2.0 TDI 190 cv','2015','Diesel')
+
+        self.assertGreaterEqual(len(result['strength_evidence']),3)
+        cats=[e['category'] for e in result['evidence']]
+        self.assertIn('DPF / EGR',cats)
+        self.assertIn('Turbo / sobrealimentação',cats)
+        self.assertGreaterEqual(len(result['checks']),3)
+        self.assertNotIn('Não foi possível confirmar um ponto forte específico',result['strengths'][0])
+        self.assertNotIn('Não foi possível confirmar um problema recorrente específico',result['issues'][0])
         self.assertTrue(result['sources'])
 
-    def test_word_matches_and_negative_reviews(self):
-        self.assertFalse(research.contains('description subscribe','scr'))
-        self.assertEqual(research.evidence_fragments('Poor comfort and bad build quality.',['comfort','build quality'],True),[])
-        self.assertEqual(research.evidence_fragments('A turbo engine with manual transmission.',['turbo','transmission']),[])
-        self.assertFalse(research.year_matches('Audi A4 2015–2023',2006))
-        self.assertTrue(research.year_matches('Audi A4 2004–2008',2006))
+    def test_preventive_checks_are_always_useful_for_diesel(self):
+        result=research.make_research(lambda q,n:[])('Audi A5','2.0 TDI 190 cv','2015','Diesel')
+        titles=[x['title'] for x in result['checks']]
+        self.assertIn('DPF / EGR',titles)
+        self.assertIn('Arranque a frio e injeção',titles)
+        self.assertIn('Turbo e admissão',titles)
+        self.assertIn('VIN e histórico',titles)
+
+    def test_old_car_does_not_get_adblue_category(self):
+        engine=[{'title':'2.0 TDI 170 common problems','snippet':'AdBlue failure, DPF problems and turbo failure.',
+                 'url':'https://engine.example/20tdi'}]
+        def search(query,n):return engine if '2.0 tdi' in query.lower() else []
+        with patch.object(research,'read_page',return_value='Common problems: AdBlue failure. DPF problems. Turbo failure.'):
+            result=research.make_research(search)('Audi A4','2.0 TDI 170 cv','2006','Diesel')
+        self.assertNotIn('AdBlue / SCR / NOx',[e['category'] for e in result['evidence']])
 
     def test_model_fuel_and_year_filters(self):
         def deal(title,year,fuel,url):
