@@ -17,13 +17,11 @@ def post_worker_init(worker):
         import app as debe_app
         import debe_runtime_fast as fast
         from debe_search_providers import make_search
-        from debe_research_v4 import make_research
+        from debe_research_v5 import make_research
         from debe_market_v2 import make_view
 
         cloud_search = make_search(fast.search_web)
 
-        # Marketplace descriptions often contain a better engine identifier than
-        # the structured title. Feed that richer identity to the research engine.
         original_engine_hint = debe_app.engine_hint
         def robust_engine_hint(text, url=''):
             first=original_engine_hint(text,url)
@@ -33,7 +31,6 @@ def post_worker_init(worker):
                 r'\b(\d[.,]\d)\s*(TDI|TFSI|TSI|dCi|BlueHDi|PureTech)\b[^\n.]{0,100}?\b(\d{2,3})\s*(?:cv|hp|bhp|ps)\b',
                 r'\b(\d[.,]\d)\s*(TDI|TFSI|TSI|dCi|BlueHDi|PureTech)\b'
             ]
-            # Prefer a full engine + power match over the shorter legacy match.
             for pat in patterns[:2]:
                 m=re.search(pat,blob,re.I)
                 if m:return debe_app.clean(f'{m.group(1)} {m.group(2)} {m.group(3)} cv').replace(',','.')
@@ -42,8 +39,6 @@ def post_worker_init(worker):
             return debe_app.clean(f'{m.group(1)} {m.group(2)}').replace(',','.') if m else ''
         debe_app.engine_hint=robust_engine_hint
 
-        # Keep the OLX beta usable when price extraction succeeds, but price is
-        # non-blocking: users can correct it in the confirmation screen.
         original_parse_olx=debe_app.parse_olx
         def robust_parse_olx(text,url):
             d=original_parse_olx(text,url)
@@ -73,7 +68,7 @@ def post_worker_init(worker):
 
         def logged_research(model,engine,year,fuel):
             result=generic_research(model,engine,year,fuel)
-            print('DEBE research v4:',model,engine,
+            print('DEBE research v5:',model,engine,
                   'results=',result.get('search_results'),
                   'positive=',result.get('positive_results'),
                   'relevant=',result.get('relevant_sources'),
@@ -84,6 +79,6 @@ def post_worker_init(worker):
         debe_app.dynamic_research=logged_research
         debe_app.search=cloud_search
         debe_app.app.view_functions['comparables']=make_view(debe_app)
-        print('DEBE runtime: evidence engine v4 + preventive checks active',flush=True)
+        print('DEBE runtime: evidence engine v5 + preventive checks active',flush=True)
     except Exception as e:
         print('DEBE runtime worker patch failed:',e,flush=True)
