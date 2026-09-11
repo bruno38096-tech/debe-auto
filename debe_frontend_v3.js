@@ -133,9 +133,11 @@
     const k = parseInt(km.replace(/\D/g, ''), 10) || 0;
     const age = Math.max(0, new Date().getFullYear() - y);
     const annual = k / Math.max(1, age || 1);
-    const preliminaryScore = (!y || !k) ? 64 : Math.max(35, Math.min(95, Math.round(
-      Math.max(35, 98 - age * 4.7) * 0.52 + Math.max(35, 98 - (annual / 1000) * 2.15) * 0.43 +
-      (vin.length === 17 ? 5 : 0) - Math.min(12, (k / 100000) * 6)
+    const ageScore = Math.max(25, Math.min(98, 100 - age * 2.4));
+    const annualScore = Math.max(25, Math.min(98, 100 - (annual / 1000) * 2.2));
+    const mileageScore = Math.max(20, Math.min(98, 100 - (k / 1000) * 0.18));
+    const preliminaryScore = (!y || !k) ? (vin.length === 17 ? 68 : 64) : Math.max(25, Math.min(95, Math.round(
+      ageScore * 0.35 + annualScore * 0.35 + mileageScore * 0.25 + (vin.length === 17 ? 5 : 0)
     )));
 
     setBusy('report', true);
