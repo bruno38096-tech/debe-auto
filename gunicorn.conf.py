@@ -1,8 +1,20 @@
-"""Gunicorn startup hooks for DEBE."""
+"""Gunicorn hooks for DEBE beta runtime."""
 
-import os
-import runpy
+def on_starting(server):
+    try:
+        from debe_runtime import patch_index
+        patch_index('index.html')
+        print('DEBE runtime: score guide injected', flush=True)
+    except Exception as e:
+        print('DEBE runtime startup patch failed:', e, flush=True)
 
-# Gunicorn loads this file before importing app:app. Explicitly execute the
-# search-resilience layer so cloud search fallbacks are active in every worker.
-runpy.run_path(os.path.join(os.getcwd(), 'sitecustomize.py'), run_name='_debe_search_resilience')
+
+def post_worker_init(worker):
+    try:
+        import app as debe_app
+        from debe_runtime import dynamic_research, search_web
+        debe_app.dynamic_research = dynamic_research
+        debe_app.search = search_web
+        print('DEBE runtime: generic research engine active', flush=True)
+    except Exception as e:
+        print('DEBE runtime worker patch failed:', e, flush=True)
