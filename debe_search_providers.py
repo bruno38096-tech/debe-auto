@@ -2,6 +2,7 @@
 Uses multiple public search surfaces because normal SERP HTML is often blocked
 for cloud IP addresses. No vehicle-specific knowledge is hardcoded here.
 """
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote_plus, urlparse
 import html,re,requests,unicodedata
 from bs4 import BeautifulSoup
@@ -92,14 +93,10 @@ def brave(q,n=8):
         return dedup(out,n)
     except Exception:return []
 
-# Search providers occasionally return unrelated popular pages while still
-# reporting a full result set. Require the quoted identity (e.g. "Audi A5" or
-# "2.0 TDI") to be present before those rows can stop the fallback chain.
 def _identity_terms(q):
     quoted=re.findall(r'"([^"]{2,80})"',q or '')
     phrase=quoted[0] if quoted else ''
-    toks=[x for x in re.findall(r'[a-z0-9]+',alow(phrase)) if len(x)>=2]
-    return toks
+    return [x for x in re.findall(r'[a-z0-9]+',alow(phrase)) if len(x)>=2]
 
 def _relevant_rows(rows,q,n):
     terms=_identity_terms(q)
@@ -108,13 +105,32 @@ def _relevant_rows(rows,q,n):
     for r in rows:
         blob=alow((r.get('title') or '')+' '+(r.get('snippet') or '')+' '+(r.get('url') or ''))
         compact=re.sub(r'[^a-z0-9]+','',blob)
-        hits=0
-        for term in terms:
-            if term in blob or term in compact:hits+=1
-        # Two-token identities should match both. Longer identities may miss a
-        # trim/variant, so all but one is enough.
+        hits=sum(1 for term in terms if term in blob or term in compact)
         need=len(terms) if len(terms)<=2 else len(terms)-1
         if hits>=need:out.append(r)
+    return dedup(out,n)
+
+# When broad public SERPs are noisy from cloud IPs, search a small set of
+# established automotive/review domains. The source list is generic and does
+# not encode knowledge about any particular vehicle.
+REVIEW_SOURCES=('carwow.co.uk','parkers.co.uk','whatcar.com','carbuyer.co.uk','autocar.co.uk','autoexpress.co.uk','edmunds.com','kbb.com')
+TECH_SOURCES=('honestjohn.co.uk','haynes.com','car-recalls.eu','repairpal.com','audiworld.com','vwvortex.com','enginepatrol.com','reddit.com')
+
+def targeted_sources(q,n=10):
+    low=alow(q)
+    review_intent=any(x in low for x in ('review','comfort','interior','handling','practicality','fuel economy','pros cons'))
+    domains=REVIEW_SOURCES if review_intent else TECH_SOURCES
+    out=[]
+    def one(domain):
+        return bing_rss(q+' site:'+domain,4)
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        jobs={ex.submit(one,d):d for d in domains}
+        for f in as_completed(jobs):
+            try:
+                got=_relevant_rows(f.result(),q,4)
+                out.extend(got)
+            except Exception:pass
+            if len(dedup(out,n))>=n:break
     return dedup(out,n)
 
 def make_search(original_search=None):
@@ -122,13 +138,12 @@ def make_search(original_search=None):
         rows=[];counts={};relevant_counts={}
         providers=[('bing_rss',bing_rss),('brave_jina',brave_jina),('brave',brave),('reddit',reddit),('mojeek',mojeek)]
         for name,fn in providers:
-            current=_relevant_rows(rows,q,n)
-            if len(current)>=max(6,min(n,8)):break
+            if len(_relevant_rows(rows,q,n))>=max(6,min(n,8)):break
             got=fn(q,n);counts[name]=len(got)
-            good=_relevant_rows(got,q,n);relevant_counts[name]=len(good)
-            rows.extend(good)
-        current=_relevant_rows(rows,q,n)
-        if len(current)<4 and original_search:
+            good=_relevant_rows(got,q,n);relevant_counts[name]=len(good);rows.extend(good)
+        if len(_relevant_rows(rows,q,n))<4:
+            got=targeted_sources(q,n);counts['targeted']=len(got);relevant_counts['targeted']=len(got);rows.extend(got)
+        if len(_relevant_rows(rows,q,n))<4 and original_search:
             try:
                 got=original_search(q,n);counts['legacy']=len(got)
                 good=_relevant_rows(got,q,n);relevant_counts['legacy']=len(good);rows.extend(good)
