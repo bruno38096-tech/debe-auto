@@ -15,6 +15,7 @@ def patch_index(path='index.html'):
         txt=open(path,encoding='utf-8').read()
         if marker in txt:
             return
+        txt=txt.replace('<title>DEBE Auto</title>','<title>DEBE — Analisar anúncios de carros usados</title>')
 
         meta='''\n<!-- debe-growth-v1 -->
 <meta name="description" content="Analise anúncios de carros usados em Portugal com score DEBE, pontos fortes, problemas reportados, verificações antes da compra e negócios comparáveis.">
