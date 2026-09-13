@@ -5,10 +5,12 @@ def on_starting(server):
         from debe_runtime import patch_index
         from debe_ui_patch_v2 import patch_market_ui
         from debe_live_ui import patch_live_copy
+        from debe_growth import patch_index as patch_growth_index
         patch_index('index.html')
         patch_market_ui('index.html')
         patch_live_copy('index.html')
-        print('DEBE runtime: score guide, market groups and public beta copy injected', flush=True)
+        patch_growth_index('index.html')
+        print('DEBE runtime: score guide, market groups, public beta copy and growth layer injected', flush=True)
     except Exception as e:
         print('DEBE runtime startup patch failed:', e, flush=True)
 
@@ -22,6 +24,7 @@ def post_worker_init(worker):
         from debe_research_v5 import make_research
         from debe_market_v2 import make_view
         from debe_analytics import install as install_analytics
+        from debe_growth import install as install_growth
 
         cloud_search = make_search(fast.search_web)
 
@@ -158,6 +161,7 @@ def post_worker_init(worker):
         debe_app.search=cloud_search
         debe_app.app.view_functions['comparables']=make_view(debe_app)
         install_analytics(debe_app)
-        print('DEBE runtime: evidence engine v5 + BMW identity + beta analytics active',flush=True)
+        install_growth(debe_app)
+        print('DEBE runtime: evidence engine v5 + BMW identity + beta analytics + organic growth active',flush=True)
     except Exception as e:
         print('DEBE runtime worker patch failed:',e,flush=True)
