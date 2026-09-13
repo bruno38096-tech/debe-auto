@@ -20,6 +20,7 @@ ALLOWED_EVENTS = {
     'comparable_click',
     'feedback_useful',
     'feedback_reuse',
+    'share_click',
 }
 ALLOWED_FIELDS = {
     'session', 'marketplace', 'model', 'year', 'score', 'missing_fields',
@@ -57,7 +58,6 @@ def install(appmod):
             if key in body:
                 payload[key] = _scalar(body.get(key))
 
-        # One easily searchable prefix makes funnel counts simple in Render logs.
         print('DEBE_EVENT ' + json.dumps(payload, ensure_ascii=False, separators=(',', ':')), flush=True)
         return jsonify(ok=True)
 
