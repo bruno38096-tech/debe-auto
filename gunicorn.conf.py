@@ -53,6 +53,13 @@ def post_worker_init(worker):
             print('DEBE sample:',debe_app.clean(original)[:70],'->',sample,flush=True)
             return rows
 
+        def bmw_named_model(url):
+            match=re.search(r'(?:^|[/_-])bmw[-_](x[1-7]|z4|m[2-8]|ix[1-7]|i[3-8])(?:[-_]|$)',url or '',re.I)
+            if not match:return ''
+            code=match.group(1)
+            if code.lower().startswith('i') and len(code)>1:return 'i'+code[1:].upper()
+            return code.upper()
+
         original_engine_hint = debe_app.engine_hint
         def robust_engine_hint(text, url=''):
             first=original_engine_hint(text,url)
@@ -67,8 +74,43 @@ def post_worker_init(worker):
                 if m:return debe_app.clean(f'{m.group(1)} {m.group(2)} {m.group(3)} cv').replace(',','.')
             if first:return first
             m=re.search(patterns[2],blob,re.I)
-            return debe_app.clean(f'{m.group(1)} {m.group(2)}').replace(',','.') if m else ''
+            if m:return debe_app.clean(f'{m.group(1)} {m.group(2)}').replace(',','.')
+
+            # BMW listings often expose the derivative as "20 d", "30 i", etc.
+            # Preserve the marketplace derivative instead of returning an empty
+            # engine field; this also improves research and market matching.
+            bm=re.search(r'\b([1-5]\d)\s*([dei])\b',blob,re.I)
+            if not bm:
+                bm=re.search(r'(?:^|[-_/])(?:ver[-_])?([1-5]\d)[-_]([dei])(?:[-_/]|$)',url or '',re.I)
+            if bm:
+                derivative=f'{bm.group(1)}{bm.group(2).lower()}'
+                power=re.search(r'\b(\d{2,3})\s*(?:cv|hp|bhp|ps)\b',blob,re.I)
+                return derivative+(f' {power.group(1)} cv' if power else '')
+            return ''
         debe_app.engine_hint=robust_engine_hint
+
+        original_parse_generic=debe_app.parse_generic
+        def robust_parse_generic(text,url):
+            d=original_parse_generic(text,url)
+            title=debe_app.clean(d.get('title',''))
+            named=bmw_named_model(url)
+            if named and re.search(r'\bBMW\b',title,re.I):
+                # Standvirtual can expose "Modelo: Série X" while the URL/raw
+                # title contains the actual X1...X7 model. Restore that identity.
+                corrected=re.sub(r'\bS[eé]rie\s+X\b',named,title,count=1,flags=re.I)
+                if corrected==title and not re.search(r'\b'+re.escape(named)+r'\b',title,re.I):
+                    corrected=re.sub(r'\bBMW\b','BMW '+named,title,count=1,flags=re.I)
+                d['title']=debe_app.clean(corrected)
+
+            d['engine']=robust_engine_hint(text,url) or d.get('engine','')
+            if not d.get('fuel'):
+                probe=debe_app.clean((d.get('title') or '')+' '+(d.get('engine') or '')+' '+(url or ''))
+                if re.search(r'\b[1-5]\d\s*d\b',probe,re.I) or re.search(r'(?:^|[-_/])[1-5]\d[-_]d(?:[-_/]|$)',url or '',re.I):
+                    d['fuel']='Diesel'
+                elif re.search(r'\b[1-5]\d\s*i\b',probe,re.I) or re.search(r'(?:^|[-_/])[1-5]\d[-_]i(?:[-_/]|$)',url or '',re.I):
+                    d['fuel']='Gasolina'
+            return d
+        debe_app.parse_generic=robust_parse_generic
 
         original_parse_olx=debe_app.parse_olx
         def robust_parse_olx(text,url):
@@ -111,7 +153,7 @@ def post_worker_init(worker):
                 if p>=150:
                     out.append(f'A potência declarada de {p} cv oferece uma reserva de desempenho relevante para autoestrada, ultrapassagens e utilização com carga.')
                     evidence.append({'category':'Reserva de desempenho','confidence':62,'matches':1,'scope':'configuration'})
-            if re.search(r'\b(TDI|dCi|BlueHDi|CDI|CRDi)\b',eng,re.I):
+            if re.search(r'\b(TDI|dCi|BlueHDi|CDI|CRDi)\b',eng,re.I) or re.search(r'\b[1-5]\d+d\b',eng,re.I):
                 out.append('A motorização turbodiesel favorece a disponibilidade de binário em regimes médios, útil em recuperações e condução diária.')
                 evidence.append({'category':'Binário / recuperações','confidence':58,'matches':1,'scope':'configuration'})
             return out[:3],evidence[:3]
@@ -136,6 +178,6 @@ def post_worker_init(worker):
         debe_app.dynamic_research=logged_research
         debe_app.search=cloud_search
         debe_app.app.view_functions['comparables']=make_view(debe_app)
-        print('DEBE runtime: evidence engine v5 + configuration strengths + preventive checks active',flush=True)
+        print('DEBE runtime: evidence engine v5 + BMW listing identity + configuration strengths active',flush=True)
     except Exception as e:
         print('DEBE runtime worker patch failed:',e,flush=True)
