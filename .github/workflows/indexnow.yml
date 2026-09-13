@@ -1,0 +1,23 @@
+name: Notify search engines
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  indexnow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Render deploy
+        run: sleep 90
+      - name: Verify public key and notify IndexNow
+        run: |
+          set -e
+          BASE="https://debe-auto.onrender.com"
+          KEY="9bfddbc4b0e831cd9e58c894a2cfeb54"
+          curl --fail --silent --show-error "$BASE/$KEY.txt"
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            -d "{\"host\":\"debe-auto.onrender.com\",\"key\":\"$KEY\",\"keyLocation\":\"$BASE/$KEY.txt\",\"urlList\":[\"$BASE/\"]}" \
+            https://api.indexnow.org/indexnow || true
