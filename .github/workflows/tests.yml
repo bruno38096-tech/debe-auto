@@ -62,3 +62,44 @@ jobs:
           else:
               raise SystemExit('Live DEBE research smoke test failed: '+repr(last))
           PY
+      - name: Validate live BMW X4 extraction and comparables
+        run: |
+          python - <<'PY'
+          import json, time, urllib.parse, urllib.request
+
+          listing_url='https://www.standvirtual.com/carros/anuncio/bmw-x4-ver-20-d-xdrive-auto-ID8Q0X1e.html'
+          base='https://debe-auto.onrender.com'
+          last=None
+          for _ in range(3):
+              try:
+                  url=base+'/api/listing?'+urllib.parse.urlencode({'url':listing_url})
+                  with urllib.request.urlopen(url, timeout=95) as r:
+                      listing=json.load(r)
+                  last=listing
+                  assert listing.get('ok') is True, listing
+                  assert 'BMW X4' in (listing.get('title') or ''), listing
+                  assert listing.get('fuel') == 'Diesel', listing
+                  assert str(listing.get('year') or '') == '2018', listing
+                  assert '31.000' in (listing.get('price') or ''), listing
+                  assert '68.000' in (listing.get('km') or ''), listing
+
+                  params={
+                      'model':listing.get('title') or 'BMW X4',
+                      'fuel':listing.get('fuel') or 'Diesel',
+                      'price':listing.get('price') or '31.000 €',
+                      'year':listing.get('year') or '2018',
+                      'url':listing_url,
+                  }
+                  with urllib.request.urlopen(base+'/api/comparables?'+urllib.parse.urlencode(params), timeout=95) as r:
+                      market=json.load(r)
+                  last=market
+                  assert market.get('ok') is True, market
+                  assert int(market.get('count') or 0) >= 1, market
+                  print(json.dumps({'listing':listing,'comparables':market},ensure_ascii=False,indent=2))
+                  break
+              except Exception as e:
+                  print('attempt failed:',repr(e),'last=',repr(last))
+                  time.sleep(20)
+          else:
+              raise SystemExit('Live BMW X4 smoke test failed: '+repr(last))
+          PY
