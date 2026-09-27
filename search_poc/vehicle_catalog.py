@@ -136,7 +136,18 @@ def body_aliases(make,body):
     d=BODY_ALIASES.get(body,{})
     return list(dict.fromkeys((d.get(make) or []) + (d.get("_generic") or [])))
 
+def _clean_variant(model, variant):
+    """Avoid queries such as 'GLC GLC 300 e' or 'CLA CLA 250 e'."""
+    model=(model or "").strip()
+    variant=(variant or "").strip()
+    if not variant:
+        return ""
+    if model and variant.lower().startswith(model.lower()+" "):
+        return variant[len(model):].strip()
+    return variant
+
 def canonical_query(make="",model="",variant="",body="all"):
+    variant=_clean_variant(model,variant)
     parts=[x.strip() for x in (make,model,variant) if x and x.strip()]
     # Put the manufacturer-native body term first to maximize official-portal recall.
     aliases=body_aliases(make,body)
@@ -144,7 +155,14 @@ def canonical_query(make="",model="",variant="",body="all"):
     return " ".join(parts)
 
 def query_variants(make="",model="",variant="",body="all"):
+    variant=_clean_variant(model,variant)
     base=" ".join(x.strip() for x in (make,model,variant) if x and x.strip())
     aliases=body_aliases(make,body)
-    if not aliases:return [base]
-    return [base+" "+a for a in aliases[:4]]
+    variants=[base]
+    variants.extend(base+" "+a for a in aliases[:4])
+    # Official/dealer sites vary between "300 e" and "300e" (same for "300 de").
+    compact=[]
+    import re
+    for q in variants:
+        compact.append(re.sub(r"\b(\d{3})\s+(de|e)\b",r"\1\2",q,flags=re.I))
+    return list(dict.fromkeys(variants+compact))
