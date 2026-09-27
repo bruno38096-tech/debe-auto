@@ -18,6 +18,9 @@ HEADERS={
 _cache={}
 _cache_lock=threading.Lock()
 CACHE_TTL=600
+_sitemap_cache={}
+_sitemap_lock=threading.Lock()
+SITEMAP_TTL=3600
 
 # Brand-specific routing keeps searches fast while retaining national dealer coverage.
 COMMON_KEYS={"carclasse","santogal","caetano","bmcar","mcoutinho","filinto","standvirtual"}
@@ -236,9 +239,90 @@ def _detail_enrich(row, source, timeout=5):
     return row
 
 
+
+def _sitemap_urls(source, timeout=7):
+    """Read a public XML sitemap (including one-level sitemap indexes)."""
+    domain=source["domain"]
+    now=time.time()
+    with _sitemap_lock:
+        hit=_sitemap_cache.get(domain)
+        if hit and now-hit[0]<SITEMAP_TTL:
+            return hit[1]
+
+    roots=[f"https://{domain}/sitemap.xml"]
+    if not domain.startswith("www."):
+        roots.append(f"https://www.{domain}/sitemap.xml")
+    collected=[]
+    children=[]
+    for root in roots:
+        try:
+            r=requests.get(root,headers=HEADERS,timeout=timeout)
+            if r.status_code>=400: continue
+            soup=BeautifulSoup(r.text,"xml")
+            locs=[clean(x.get_text(strip=True)) for x in soup.find_all("loc")]
+            if not locs: continue
+            if soup.find("sitemapindex"):
+                children.extend(locs[:30])
+            else:
+                collected.extend(locs)
+            if locs: break
+        except Exception:
+            continue
+
+    # One-level child sitemap traversal. Cap protects beta latency.
+    for child in children[:18]:
+        try:
+            r=requests.get(child,headers=HEADERS,timeout=timeout)
+            if r.status_code>=400: continue
+            soup=BeautifulSoup(r.text,"xml")
+            collected.extend(clean(x.get_text(strip=True)) for x in soup.find_all("loc"))
+        except Exception:
+            continue
+
+    collected=list(dict.fromkeys(u for u in collected if u.startswith("http")))
+    with _sitemap_lock:
+        _sitemap_cache[domain]=(now,collected)
+    return collected
+
+
+def _sitemap_candidates(q, source, limit=3, timeout=7):
+    if source.get("key") not in {"bmcar","carclasse","santogal","caetano","mcoutinho","filinto"}:
+        return []
+    urls=_sitemap_urls(source,timeout=timeout)
+    if not urls:return []
+    aliases=_query_aliases(q)
+    # Match meaningful query tokens against URL slugs; dealer vehicle URLs are
+    # usually descriptive enough to identify model/engine without an external index.
+    query_tokens=[]
+    for alias in aliases:
+        toks=[x for x in re.findall(r"[a-z0-9]+",ascii_low(alias)) if len(x)>=2 and x not in {
+            "mercedes","benz","bmw","audi","volvo","porsche","serie","classe","suv",
+            "touring","avant","estate","station","wagon","carrinha"
+        }]
+        query_tokens.append(toks)
+
+    ranked=[]
+    for url in urls:
+        low=ascii_low(url)
+        compact=re.sub(r"[^a-z0-9]","",low)
+        best=0
+        for toks in query_tokens:
+            if not toks: continue
+            hits=sum(1 for t in toks if t in low or re.sub(r"[^a-z0-9]","",t) in compact)
+            best=max(best,hits/max(1,len(toks)))
+        if best>=0.66:
+            # Prefer known vehicle-detail paths over category/content pages.
+            bonus=1 if any(p in low for p in ("/veiculos/","/stock-viaturas/","/viatura/","/carro/")) else 0
+            ranked.append((best,bonus,url))
+    ranked.sort(key=lambda x:(x[0],x[1]),reverse=True)
+    return [(url,"","") for _,_,url in ranked[:limit]]
+
 def _source_query(q, source, limit=3, timeout=8):
     domain=source["domain"]
     items=[]; error=""
+    # First try the dealer's own sitemap. This avoids external-index lag.
+    for sm_url,_,_ in _sitemap_candidates(q,source,limit=limit,timeout=min(timeout,7)):
+        items.append(("", "", sm_url))
     # Do NOT quote the whole vehicle string: dealer titles use different naming
     # conventions (330e vs Série 3 330e; GLC 300e vs GLC 300 e).
     for alias in _query_aliases(q):
