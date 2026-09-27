@@ -117,6 +117,12 @@ def _condition(blob, source):
     if "usad" in b or "re-estreio" in b:
         return "used"
     kinds=source.get("kinds") or []
+    if len(kinds)==1 and kinds[0]=="new_stock":
+        # Only inventory-specific portals may imply immediate stock without
+        # an explicit availability phrase. Generic manufacturer model pages
+        # are not treated as stock merely because they sell new cars.
+        trusted={"audi_immediate","volvo_inventory","bmw_caetano_new","tesla"}
+        return "new_stock" if source.get("key") in trusted else "unknown"
     return kinds[0] if len(kinds)==1 else "unknown"
 
 
@@ -229,15 +235,40 @@ def _direct_specials(q):
     return out
 
 
+def _title_tokens(title):
+    stop={"bmw","mercedes","benz","audi","volvo","porsche","usado","usados","novo","nova","carro","veiculo","veículo","auto"}
+    return {x for x in re.findall(r"[a-z0-9]+",ascii_low(title or "")) if len(x)>=2 and x not in stop}
+
+def _same_vehicle(a,b):
+    # Conservative cross-source duplicate heuristic. Exact URLs are handled
+    # separately; this only merges when year, price, mileage and model tokens agree.
+    if not all(a.get(k) is not None and b.get(k) is not None for k in ("price_eur","mileage_km","year")):
+        return False
+    if a.get("year")!=b.get("year"): return False
+    if abs(float(a["price_eur"])-float(b["price_eur"]))>750: return False
+    if abs(int(a["mileage_km"])-int(b["mileage_km"]))>750: return False
+    ta,tb=_title_tokens(a.get("title")), _title_tokens(b.get("title"))
+    return len(ta & tb)>=2
+
 def _dedup(rows):
-    out=[]; seen_urls=set(); seen_sig=set()
+    out=[]; seen_urls=set()
     for r in rows:
         u=r.get("url") or ""
         if u and u in seen_urls: continue
-        sig=(ascii_low(r.get("title",""))[:90],r.get("price_eur"),r.get("mileage_km"),r.get("source_key"))
-        if sig in seen_sig:continue
-        if u:seen_urls.add(u)
-        seen_sig.add(sig);out.append(r)
+        merged=False
+        for ex in out:
+            if _same_vehicle(ex,r):
+                ex.setdefault("also_at",[])
+                if r.get("source") and r.get("source")!=ex.get("source") and r["source"] not in ex["also_at"]:
+                    ex["also_at"].append(r["source"])
+                # Prefer richer/direct data while preserving the original source link.
+                for k in ("list_price_eur","discount_eur","discount_pct","availability","dealer"):
+                    if not ex.get(k) and r.get(k): ex[k]=r[k]
+                merged=True; break
+        if merged: continue
+        if u: seen_urls.add(u)
+        r.setdefault("also_at",[])
+        out.append(r)
     return out
 
 
