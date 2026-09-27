@@ -139,7 +139,8 @@ def _startup_bmcar_diag():
         import requests,re
         from bs4 import BeautifulSoup
         url="https://www.bmcar.pt/veiculos?brandIds%5B%5D=c427305a-a22d-433f-99dd-2198ccf858da&engineTypeIds%5B%5D=9&brandSegmentIds%5B%5D=9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
-        r=requests.get(url,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"},timeout=8)
+        headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36","Accept-Language":"pt-PT,pt;q=0.9"}
+        r=requests.get(url,headers=headers,timeout=8)
         soup=BeautifulSoup(r.text,"html.parser")
         scripts=[s.get("src") for s in soup.find_all("script") if s.get("src")]
         preload_chunks=[x.get("href") for x in soup.find_all("link",href=True) if "/_next/static/chunks/" in x.get("href","")]
