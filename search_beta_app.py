@@ -87,9 +87,11 @@ async function init(){
 function setBusy(on){document.getElementById('loading').classList.toggle('hidden',!on);if(on){document.getElementById('results').innerHTML='';document.getElementById('sources').innerHTML='';document.getElementById('stats').innerHTML=''}}
 async function runStructured(e){
   if(e)e.preventDefault();
-  const make=document.getElementById('make').value, model=document.getElementById('model').value;
+  const make=document.getElementById('make').value, model=document.getElementById('model').value, variant=document.getElementById('variant').value;
   if(!make||!model){document.getElementById('notice').textContent='Escolhe pelo menos a marca e o modelo.';return}
-  const p=new URLSearchParams({make,model,variant:document.getElementById('variant').value,body:document.getElementById('body').value,condition:document.getElementById('cond').value});
+  document.getElementById('querytitle').textContent=[make,model,variant].filter(Boolean).join(' · ');
+  document.getElementById('querymeta').textContent='A pesquisar…';
+  const p=new URLSearchParams({make,model,variant,body:document.getElementById('body').value,condition:document.getElementById('cond').value});
   await fetchResults('/api/search?'+p.toString());
 }
 async function runAdvanced(){
@@ -99,9 +101,20 @@ async function runAdvanced(){
 }
 async function fetchResults(url){
   setBusy(true);
-  try{const r=await fetch(url);const d=await r.json();render(d)}
-  catch(e){document.getElementById('results').innerHTML='<div class="notice">Erro na pesquisa beta: '+esc(e)+'</div>'}
-  finally{setBusy(false)}
+  try{
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),22000);
+    const r=await fetch(url,{signal:controller.signal});
+    clearTimeout(timer);
+    if(!r.ok) throw new Error('Pesquisa temporariamente indisponível ('+r.status+').');
+    const text=await r.text();
+    if(!text) throw new Error('A pesquisa terminou sem resposta. Tenta novamente.');
+    const d=JSON.parse(text);render(d);
+  }catch(e){
+    const msg=e.name==='AbortError'?'A pesquisa demorou demasiado. Tenta novamente.':String(e.message||e);
+    document.getElementById('querymeta').textContent='Pesquisa não concluída';
+    document.getElementById('results').innerHTML='<div class="notice">'+esc(msg)+'</div>';
+  }finally{setBusy(false)}
 }
 function render(d){
   const s=d.summary||{};
