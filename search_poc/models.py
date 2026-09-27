@@ -27,6 +27,13 @@ class Vehicle:
     power_cv: Optional[int] = None
     co2_g_km: Optional[float] = None
     electric_range_km: Optional[float] = None
+    # Inventory classification is critical for fair comparisons.
+    condition: str = "used"  # new_stock | demo_service | km0 | used_certified | used
+    availability: str = ""
+    list_price_eur: Optional[float] = None
+    discount_eur: Optional[float] = None
+    discount_pct: Optional[float] = None
+    is_official_stock: bool = False
 
     @property
     def fingerprint(self) -> str:
@@ -34,7 +41,7 @@ class Vehicle:
         parts = [
             _norm(self.make), _norm(self.model), _norm(self.variant), _norm(self.body),
             str(self.year or ""), str(self.mileage_km or ""), str(round(self.price_eur or 0)),
-            _norm(self.dealer),
+            _norm(self.dealer), _norm(self.condition),
         ]
         return hashlib.sha1("|".join(parts).encode()).hexdigest()[:16]
 
