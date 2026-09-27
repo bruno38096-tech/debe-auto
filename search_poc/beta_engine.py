@@ -320,17 +320,11 @@ def _sitemap_candidates(q, source, limit=3, timeout=7):
 def _source_query(q, source, limit=3, timeout=8):
     domain=source["domain"]
     items=[]; error=""
-    # First try the dealer's own sitemap. This avoids external-index lag.
-    for sm_url,_,_ in _sitemap_candidates(q,source,limit=limit,timeout=min(timeout,7)):
-        items.append(("", "", sm_url))
     # Do NOT quote the whole vehicle string: dealer titles use different naming
     # conventions (330e vs Série 3 330e; GLC 300e vs GLC 300 e).
-    for alias in _query_aliases(q):
+    for alias in _query_aliases(q)[:3]:
         sq=f"site:{domain} {alias}"
-        urls=[
-            "https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(sq),
-            "https://r.jina.ai/https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(sq),
-        ]
+        urls=["https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(sq)]
         for idx,u in enumerate(urls):
             try:
                 r=requests.get(u,headers=HEADERS,timeout=timeout)
@@ -383,7 +377,7 @@ def _source_query(q, source, limit=3, timeout=8):
             "discount_pct":disc_pct,"mileage_km":_km(blob),"year":_year(blob),
             "dealer":_dealer(blob),"discovery":"public_index",
         }
-        out.append(_detail_enrich(row,source,timeout=min(timeout,5)))
+        out.append(_detail_enrich(row,source,timeout=min(timeout,3)))
     return out,error
 
 def _direct_specials(q):
@@ -468,7 +462,7 @@ def search_all(q, condition="all", max_per_source=3):
     statuses=[]
     selected_sources=_relevant_sources(q)
     with ThreadPoolExecutor(max_workers=min(12,max(1,len(selected_sources)))) as ex:
-        jobs={ex.submit(_source_query,q,s,max_per_source,6):s for s in selected_sources}
+        jobs={ex.submit(_source_query,q,s,max_per_source,4):s for s in selected_sources}
         for fut in as_completed(jobs):
             s=jobs[fut]
             try:
