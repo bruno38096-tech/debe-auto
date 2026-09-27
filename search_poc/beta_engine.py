@@ -19,6 +19,51 @@ _cache={}
 _cache_lock=threading.Lock()
 CACHE_TTL=600
 
+# Brand-specific routing keeps searches fast while retaining national dealer coverage.
+COMMON_KEYS={"carclasse","santogal","caetano","bmcar","mcoutinho","filinto","standvirtual"}
+BRAND_KEYS={
+    "bmw":{"bmw_new","bmw_premium","bmw_caetano_new"},
+    "mercedes":{"mercedes_new","mercedes_certified"},
+    "audi":{"audi_immediate","audi_used","dwa"},
+    "volkswagen":{"vw_new","dwa"},
+    "vw":{"vw_new","dwa"},
+    "seat":{"seat_new","dwa"},
+    "cupra":{"cupra_new","dwa"},
+    "skoda":{"skoda_new","dwa"},
+    "porsche":{"porsche_finder"},
+    "volvo":{"volvo_inventory","volvo_selekt"},
+    "ford":{"ford_new","ford_approved"},
+    "hyundai":{"hyundai_new","hyundai_goon"},
+    "toyota":{"toyota_new","toyota_used"},
+    "lexus":{"lexus_new","lexus_select"},
+    "nissan":{"nissan_new","nissan_choice"},
+    "renault":{"renault_new","renault_renew"},
+    "dacia":{"dacia_new","renault_renew"},
+    "kia":{"kia"},
+    "peugeot":{"peugeot_new","stellantis_you","spoticar"},
+    "citroen":{"citroen_new","stellantis_you","spoticar"},
+    "citroën":{"citroen_new","stellantis_you","spoticar"},
+    "opel":{"opel_new","stellantis_you","spoticar"},
+    "fiat":{"fiat_new","stellantis_you","spoticar"},
+    "jeep":{"jeep_new","stellantis_you","spoticar"},
+    "tesla":{"tesla"},
+}
+
+def _relevant_sources(q):
+    low=ascii_low(q)
+    brand_keys=set()
+    for brand,keys in BRAND_KEYS.items():
+        if re.search(r"\b"+re.escape(ascii_low(brand))+r"\b",low):
+            brand_keys |= keys
+    if brand_keys:
+        allow=brand_keys | COMMON_KEYS
+        return [s for s in SOURCES if s["key"] in allow]
+    # Generic searches are intentionally capped to the broadest national sources.
+    generic={"bmw_premium","mercedes_certified","audi_immediate","dwa","porsche_finder",
+             "volvo_inventory","ford_approved","hyundai_goon","toyota_used","lexus_select",
+             "stellantis_you","spoticar"} | COMMON_KEYS
+    return [s for s in SOURCES if s["key"] in generic]
+
 
 def clean(s):
     return re.sub(r"\s+"," ",html.unescape(s or "")).strip()
@@ -207,8 +252,9 @@ def search_all(q, condition="all", max_per_source=3):
 
     results=_direct_specials(q)
     statuses=[]
-    with ThreadPoolExecutor(max_workers=10) as ex:
-        jobs={ex.submit(_source_query,q,s,max_per_source):s for s in SOURCES}
+    selected_sources=_relevant_sources(q)
+    with ThreadPoolExecutor(max_workers=min(12,max(1,len(selected_sources)))) as ex:
+        jobs={ex.submit(_source_query,q,s,max_per_source,6):s for s in selected_sources}
         for fut in as_completed(jobs):
             s=jobs[fut]
             try:
@@ -241,8 +287,9 @@ def search_all(q, condition="all", max_per_source=3):
         "used":sum(1 for r in results if r.get("condition")=="used"),
         "explicit_discount":sum(1 for r in results if r.get("discount_pct")),
         "sources_with_hits":sum(1 for s in statuses if s["count"]>0),
-        "sources_checked":len(SOURCES),
+        "sources_checked":len(selected_sources),
+        "catalog_sources":len(SOURCES),
     }
-    payload={"query":q,"condition":condition,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":"Cobertura beta por conetores diretos + descoberta pública indexada; um resultado vazio não prova ausência de stock na fonte."}
+    payload={"query":q,"condition":condition,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {len(selected_sources)} relevantes consultadas nesta pesquisa. Conetores diretos + descoberta pública indexada; um resultado vazio não prova ausência de stock na fonte."}
     with _cache_lock:_cache[cache_key]=(now,payload)
     return payload
