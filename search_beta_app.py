@@ -185,7 +185,7 @@ def _startup_bmcar_diag():
             try:
                 js=requests.get("https://www.bmcar.pt"+src,headers=headers,timeout=5).text
                 lowjs=js.lower()
-                needles=["brandsegmentids","enginetypeids","vehicleconditionids","totalvehicles","showonlyavailable","getvehicles","/vehicles","/veiculos","graphql","api"]
+                needles=["654704","539665","388615","175696","brandsegmentids","enginetypeids","vehicleconditionids","totalvehicles","showonlyavailable","getvehicles","/vehicles","/veiculos","graphql","api"]
                 found=[]
                 for needle in needles:
                     pos=0; count=0
