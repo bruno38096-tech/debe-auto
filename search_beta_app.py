@@ -124,7 +124,15 @@ function render(d){
   document.getElementById('notice').textContent=d.beta_note||'';
   const stat=[['total','Carros encontrados'],['new_stock','Novos / stock'],['used_certified','Certificados'],['explicit_discount','Com desconto explícito']];
   document.getElementById('stats').innerHTML=stat.map(x=>'<div class="stat"><b>'+(s[x[0]]||0)+'</b><span>'+x[1]+'</span></div>').join('');
-  document.getElementById('sources').innerHTML=(d.sources||[]).map(x=>'<div class="src"><span>'+esc(x.name)+'</span><span class="'+x.status+'">'+(x.count?x.count:(x.status==='empty'?'0 exatos':x.status))+'</span></div>').join('');
+  document.getElementById('sources').innerHTML=(d.sources||[]).map(x=>{
+    const value=x.count
+      ? ((x.candidate_count&&x.candidate_count>x.count)
+          ? x.count+' exato'+(x.count===1?'':'s')+' · '+x.candidate_count+' no filtro amplo'
+          : String(x.count))
+      : (x.status==='empty'?'0 exatos':x.status);
+    const tip=x.candidate_label?(' title="'+esc(x.candidate_label)+'"'):'';
+    return '<div class="src"'+tip+'><span>'+esc(x.name)+'</span><span class="'+x.status+'">'+esc(value)+'</span></div>';
+  }).join('');
   if(!(d.results||[]).length){document.getElementById('results').innerHTML='<div class="notice">Não encontrei resultados nesta passagem. Em fontes ainda sem conetor direto, isto pode significar apenas que o stock não está indexado.</div>';return}
   document.getElementById('results').innerHTML=d.results.map(x=>{
     const tags=[condLabel[x.condition]||x.condition,x.year,x.mileage_km!=null?new Intl.NumberFormat('pt-PT').format(x.mileage_km)+' km':'',x.availability,x.dealer,(x.also_at&&x.also_at.length?'Também em '+x.also_at.join(', '):'')].filter(Boolean);
@@ -137,37 +145,6 @@ init();
 
 
 
-def _probe_bmcar_detail_once():
-    try:
-        import requests, json
-        slug="bmw-serie-3-touring-330e-touring-pack-desportivo-m-pro-v51l-9d87"
-        vid="5cb7fa5b-2256-4024-b492-08deec97f54b"
-        headers={"User-Agent":"Mozilla/5.0","Accept":"application/json","x-version":"2"}
-        candidates=[
-            f"https://api.bmcar.pt/vehicle/portal/{slug}",
-            f"https://api.bmcar.pt/vehicle/portal/{vid}",
-            f"https://api.bmcar.pt/vehicle/portal/detail/{slug}",
-            f"https://api.bmcar.pt/vehicle/portal/{slug}/detail",
-        ]
-        for url in candidates:
-            try:
-                r=requests.get(url,headers=headers,timeout=6)
-                try:
-                    j=r.json()
-                    d=j.get("data",j) if isinstance(j,dict) else j
-                    if isinstance(d,dict):
-                        focus={k:d.get(k) for k in ["id","name","slug","year","kilometers","price","priceCalculated","discount","hasDiscount","hasFlashSale","flashSaleEndDate","referenceId","productTags","pvp","cashPrice","finalPrice"] if k in d}
-                        print("BMCAR_DETAIL_PROBE",r.status_code,url,"KEYS",list(d.keys()),"FOCUS",focus,flush=True)
-                    else:
-                        print("BMCAR_DETAIL_PROBE",r.status_code,url,"TYPE",type(d).__name__,flush=True)
-                except Exception:
-                    print("BMCAR_DETAIL_PROBE",r.status_code,url,"TEXT",repr(r.text[:2000]),flush=True)
-            except Exception as e:
-                print("BMCAR_DETAIL_PROBE_ERROR",url,repr(e),flush=True)
-    except Exception as e:
-        print("BMCAR_DETAIL_PROBE_FATAL",repr(e),flush=True)
-
-_probe_bmcar_detail_once()
 
 @app.get("/")
 def home():
