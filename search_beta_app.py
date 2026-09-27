@@ -133,6 +133,32 @@ function render(d){
 init();
 </script></body></html>'''
 
+
+def _startup_bmcar_diag():
+    try:
+        import requests,re
+        from bs4 import BeautifulSoup
+        url="https://www.bmcar.pt/veiculos?brandIds%5B%5D=c427305a-a22d-433f-99dd-2198ccf858da&engineTypeIds%5B%5D=9&brandSegmentIds%5B%5D=9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
+        r=requests.get(url,headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"},timeout=8)
+        soup=BeautifulSoup(r.text,"html.parser")
+        scripts=[s.get("src") for s in soup.find_all("script") if s.get("src")]
+        inline="\n".join(s.get_text("\n",strip=True) for s in soup.find_all("script") if not s.get("src"))
+        links=[a.get("href") for a in soup.find_all("a",href=True) if "/veiculos/" in a.get("href","")]
+        interesting=[]
+        scan=r.text+"\n"+inline
+        for p in [r'https?://[^"\'\s<>]+',r'/(?:api|graphql|vehicles|veiculos)[^"\'\s<>]+',r'[^"\'\s<>]{0,90}(?:brandIds|engineTypeIds|brandSegmentIds)[^"\'\s<>]{0,140}']:
+            for x in re.findall(p,scan,re.I):
+                if any(k in x.lower() for k in ("api","graphql","vehicle","veiculo","brandid","enginetype","brandsegment")) and x not in interesting:
+                    interesting.append(x[:500])
+        print("BMCAR_DIAG_STATUS",r.status_code,"LEN",len(r.text),"HAS_NEXT",("__NEXT_DATA__" in r.text),flush=True)
+        print("BMCAR_DIAG_SCRIPTS",scripts[:40],flush=True)
+        print("BMCAR_DIAG_LINKS",links[:40],flush=True)
+        print("BMCAR_DIAG_INTERESTING",interesting[:80],flush=True)
+    except Exception as e:
+        print("BMCAR_DIAG_ERROR",repr(e),flush=True)
+
+_startup_bmcar_diag()
+
 @app.get("/")
 def home():
     return Response(HTML,mimetype="text/html")
