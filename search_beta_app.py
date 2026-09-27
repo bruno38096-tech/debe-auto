@@ -166,7 +166,16 @@ def _startup_bmcar_diag():
                 ("page","1"),("size","100")
             ]
             ar=requests.get(api_url,params=api_params,headers={**headers,"x-version":"2","Accept":"application/json"},timeout=8)
-            print("BMCAR_API_PROBE",ar.status_code,ar.url,"CT",ar.headers.get("content-type"),"HEAD",ar.text[:8000],flush=True)
+            try:
+                aj=ar.json()
+                data=aj.get("data",aj) if isinstance(aj,dict) else aj
+                items=data.get("items",[]) if isinstance(data,dict) else []
+                print("BMCAR_API_SHAPE","STATUS",ar.status_code,"TOP_KEYS",list(aj.keys()) if isinstance(aj,dict) else type(aj).__name__,"DATA_KEYS",list(data.keys()) if isinstance(data,dict) else type(data).__name__,"TOTAL",data.get("total") if isinstance(data,dict) else None,"ITEMS",len(items),flush=True)
+                import json as _json
+                print("BMCAR_API_ITEM0",_json.dumps(items[0] if items else None,ensure_ascii=False,separators=(",",":"))[:12000],flush=True)
+                print("BMCAR_API_NAMES",[(x.get("name"),x.get("slug"),x.get("price"),x.get("kilometers"),x.get("plateYear")) for x in items[:30] if isinstance(x,dict)],flush=True)
+            except Exception as je:
+                print("BMCAR_API_JSON_ERROR",repr(je),"HEAD",repr(ar.text[:1000]),flush=True)
         except Exception as e:
             print("BMCAR_API_PROBE_ERROR",repr(e),flush=True)
         # Directly probe the public vehicle API used by the BMcar frontend.
