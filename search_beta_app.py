@@ -157,6 +157,23 @@ def _startup_bmcar_diag():
         print("BMCAR_DIAG_SCRIPTS",scripts[:80],flush=True)
         print("BMCAR_DIAG_LINKS",links[:40],flush=True)
         print("BMCAR_DIAG_INTERESTING",interesting[:80],flush=True)
+        # Directly probe the public vehicle API used by the BMcar frontend.
+        api="https://api.bmcar.pt/vehicle/portal"
+        base_params={"page":1,"size":100}
+        uid_brand="c427305a-a22d-433f-99dd-2198ccf858da"
+        uid_segment="9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
+        styles=[
+            ("plain",{**base_params,"brandIds":uid_brand,"engineTypeIds":"9","brandSegmentIds":uid_segment}),
+            ("brackets",[( "page",1),( "size",100),( "brandIds[]",uid_brand),( "engineTypeIds[]","9"),( "brandSegmentIds[]",uid_segment)]),
+            ("repeated",[( "page",1),( "size",100),( "brandIds",uid_brand),( "engineTypeIds","9"),( "brandSegmentIds",uid_segment)]),
+        ]
+        for label,params in styles:
+            try:
+                ar=requests.get(api,params=params,headers={**headers,"x-version":"2","Accept":"application/json"},timeout=8)
+                head=ar.text[:5000]
+                print("BMCAR_API_PROBE",label,"STATUS",ar.status_code,"URL",ar.url,"LEN",len(ar.text),"BODY",head,flush=True)
+            except Exception as e:
+                print("BMCAR_API_PROBE",label,"ERROR",repr(e),flush=True)
         try:
             rsc_url=url+("&" if "?" in url else "?")+"_rsc=1"
             rsc_headers=dict(headers)
