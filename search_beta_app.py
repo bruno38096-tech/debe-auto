@@ -203,6 +203,27 @@ def _startup_bmcar_diag():
                 src,found=fut.result()
                 if found:
                     print("BMCAR_DIAG_CHUNK",src,"FOUND",found[:20],flush=True)
+        def scan_map(src):
+            try:
+                map_url="https://www.bmcar.pt"+src+".map"
+                mr=requests.get(map_url,headers=headers,timeout=5)
+                if not mr.ok:return src,mr.status_code,0,[]
+                txt=mr.text
+                lowm=txt.lower()
+                found=[]
+                for needle in ["brandsegmentids","enginetypeids","vehicleconditionids","getvehicles","totalvehicles","vehiclequery","vehiclefilter","graphql","api/vehicles","api/veiculos"]:
+                    p=lowm.find(needle)
+                    if p>=0:
+                        found.append((needle,re.sub(r"\s+"," ",txt[max(0,p-1200):p+2500])[:3700]))
+                return src,mr.status_code,len(txt),found
+            except Exception:
+                return src,0,0,[]
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futs=[ex.submit(scan_map,src) for src in scripts if src.endswith(".js")]
+            for fut in as_completed(futs):
+                src,status,length,found=fut.result()
+                if found:
+                    print("BMCAR_DIAG_MAP",src,"STATUS",status,"LEN",length,"FOUND",found,flush=True)
     except Exception as e:
         print("BMCAR_DIAG_ERROR",repr(e),flush=True)
 
