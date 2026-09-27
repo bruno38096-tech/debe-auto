@@ -1,19 +1,18 @@
-"""BMcar inventory connector backed by BMcar's public vehicle API.
+"""BMcar inventory connector for DEBE Search beta.
 
-The BMcar Next.js frontend uses:
+Uses the same public API as bmcar.pt:
   GET https://api.bmcar.pt/vehicle/portal
   x-version: 2
 
-Important: the frontend converts URL bracket parameters to arrays and its
-serializer sends the API fields without [] for a single value. Using bracket
-keys directly against the API causes those filters to be ignored.
+Important: the BMcar web filter supplied by the user selects BMW + Hybrid
+Petrol + Série 3 Touring. That includes 320e and 330e. DEBE then keeps only
+exact 330e Touring matches when the user selected 330e.
 """
-import re
 import requests
 from search_poc.models import Vehicle
 
 API="https://api.bmcar.pt/vehicle/portal"
-DETAIL_BASE="https://www.bmcar.pt/veiculos/"
+BASE="https://www.bmcar.pt/veiculos/"
 HEADERS={
     "User-Agent":"Mozilla/5.0 (compatible; DEBE-Search-Beta/0.5)",
     "Accept":"application/json",
@@ -26,25 +25,10 @@ HYBRID_PETROL_ID="9"
 SERIE3_TOURING_SEGMENT_ID="9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
 
 
-def _is_330e_touring(item):
-    text=" ".join(str(item.get(k) or "") for k in (
-        "name","modelName","brandSegmentName","version"
-    )).lower()
-    compact=re.sub(r"[^a-z0-9]","",text)
-    return "330e" in compact and "touring" in text
-
-
-def _condition(item):
-    tags={str(x).lower() for x in (item.get("productTags") or [])}
-    if "bmwpremium" in tags:
-        return "used_certified"
-    km=item.get("kilometers")
-    if km is not None and km <= 100:
-        return "km0"
-    return "used"
-
-
-def discover_bmw_330e_touring(limit=30, timeout=7):
+def _fetch_inventory(timeout=7):
+    # NB: BMcar's API expects scalar query keys for these single selected values.
+    # Sending brandIds[]/engineTypeIds[]/brandSegmentIds[] causes the API to
+    # ignore the filters and return the full catalogue.
     params={
         "page":1,
         "size":100,
@@ -55,64 +39,73 @@ def discover_bmw_330e_touring(limit=30, timeout=7):
     r=requests.get(API,params=params,headers=HEADERS,timeout=timeout)
     r.raise_for_status()
     payload=r.json()
-    data=payload.get("data") or {}
-    items=data.get("items") or []
+    data=payload.get("data",{}) if isinstance(payload,dict) else {}
+    return data.get("items",[]) if isinstance(data,dict) else []
+
+
+def _is_exact_330e_touring(item):
+    name=(item.get("name") or "").lower().replace(" ","")
+    model=(item.get("modelName") or "").lower().replace(" ","")
+    segment=(item.get("brandSegmentName") or "").lower()
+    return ("330e" in name or "330e" in model) and "touring" in (name+model+segment)
+
+
+def _vehicle_from_api(item):
+    slug=item.get("slug") or ""
+    if not slug:
+        return None
+
+    # BMcar's current public API exposes both price and priceCalculated.
+    # priceCalculated is the value to present when a campaign/discount is active.
+    raw_price=item.get("price")
+    calculated=item.get("priceCalculated")
+    current=calculated if isinstance(calculated,(int,float)) and calculated>0 else raw_price
+    list_price=None
+    discount_eur=None
+    discount_pct=None
+    if isinstance(raw_price,(int,float)) and isinstance(current,(int,float)) and raw_price>current:
+        list_price=float(raw_price)
+        discount_eur=round(float(raw_price-current),2)
+        discount_pct=round(discount_eur/float(raw_price)*100,1)
+
+    tags=item.get("productTags") or []
+    condition="used_certified" if "BmwPremium" in tags else (
+        "new_stock" if (item.get("kilometers") or 0)<=100 else "used"
+    )
+
+    return Vehicle(
+        source="bmcar",
+        source_id=str(item.get("id") or item.get("referenceId") or slug),
+        url=BASE+slug,
+        make="BMW",
+        model="Série 3",
+        variant=(item.get("name") or item.get("modelName") or "330e Touring").replace("BMW ","").strip(),
+        body="Touring",
+        year=item.get("year"),
+        mileage_km=item.get("kilometers"),
+        price_eur=float(current) if isinstance(current,(int,float)) and current>0 else None,
+        dealer="BMcar",
+        fuel="Híbrido Plug-In",
+        power_cv=item.get("powerHp"),
+        condition=condition,
+        list_price_eur=list_price,
+        discount_eur=discount_eur,
+        discount_pct=discount_pct,
+        is_official_stock=True,
+    )
+
+
+def discover_bmw_330e_touring(limit=20, timeout=7):
+    try:
+        items=_fetch_inventory(timeout=timeout)
+    except Exception:
+        return []
 
     out=[]
     for item in items:
-        if not _is_330e_touring(item):
+        if not isinstance(item,dict) or not _is_exact_330e_touring(item):
             continue
-
-        current=item.get("priceCalculated")
-        if current is None:
-            current=item.get("price")
-        list_price=item.get("price")
-        try:
-            current=float(current) if current is not None else None
-        except (TypeError,ValueError):
-            current=None
-        try:
-            list_price=float(list_price) if list_price is not None else None
-        except (TypeError,ValueError):
-            list_price=None
-
-        # Only show a crossed-out list price when it is genuinely higher.
-        discount_eur=None
-        discount_pct=None
-        shown_list=None
-        if current is not None and list_price is not None and list_price > current:
-            shown_list=list_price
-            discount_eur=round(list_price-current,2)
-            discount_pct=round(discount_eur/list_price*100,1)
-
-        slug=str(item.get("slug") or "").strip("/")
-        url=DETAIL_BASE+slug if slug else "https://www.bmcar.pt/veiculos"
-        model_name=str(item.get("modelName") or "330e Touring")
-        version=str(item.get("version") or "").strip()
-        title=str(item.get("name") or f"BMW {model_name}").strip()
-        if version and version.lower() not in title.lower():
-            title=f"{title} {version}"
-
-        out.append(Vehicle(
-            source="bmcar",
-            source_id=str(item.get("id") or item.get("referenceId") or slug),
-            url=url,
-            make="BMW",
-            model="Série 3",
-            variant=f"{model_name} {version}".strip(),
-            body="Touring",
-            year=int(item["year"]) if item.get("year") else None,
-            mileage_km=int(item["kilometers"]) if item.get("kilometers") is not None else None,
-            price_eur=current,
-            dealer="BMcar",
-            fuel="Híbrido Plug-In",
-            power_cv=int(item["powerHp"]) if item.get("powerHp") else None,
-            condition=_condition(item),
-            list_price_eur=shown_list,
-            discount_eur=discount_eur,
-            discount_pct=discount_pct,
-            is_official_stock=True,
-        ))
-        if len(out)>=limit:
-            break
-    return out
+        v=_vehicle_from_api(item)
+        if v:
+            out.append(v)
+    return out[:limit]
