@@ -169,6 +169,7 @@ def _startup_bmcar_diag():
                 p=lowr.find(needle)
                 if p>=0:samples.append((needle,re.sub(r"\s+"," ",rr.text[max(0,p-700):p+1800])[:2500]))
             print("BMCAR_DIAG_RSC",rr.status_code,"LEN",len(rr.text),"CT",rr.headers.get("content-type"),"COUNTS",{"330e":lowr.count("330e"),"touring":lowr.count("touring")},"SAMPLES",samples,flush=True)
+            print("BMCAR_DIAG_RSC_HEAD",re.sub(r"\s+"," ",rr.text[:12000]),flush=True)
         except Exception as e:
             print("BMCAR_DIAG_RSC_ERROR",repr(e),flush=True)
         low=r.text.lower()
