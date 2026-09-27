@@ -152,7 +152,16 @@ def _probe_bmcar_detail_once():
         for url in candidates:
             try:
                 r=requests.get(url,headers=headers,timeout=6)
-                print("BMCAR_DETAIL_PROBE",r.status_code,url,r.text[:5000],flush=True)
+                try:
+                    j=r.json()
+                    d=j.get("data",j) if isinstance(j,dict) else j
+                    if isinstance(d,dict):
+                        focus={k:d.get(k) for k in ["id","name","slug","year","kilometers","price","priceCalculated","discount","hasDiscount","hasFlashSale","flashSaleEndDate","referenceId","productTags","pvp","cashPrice","finalPrice"] if k in d}
+                        print("BMCAR_DETAIL_PROBE",r.status_code,url,"KEYS",list(d.keys()),"FOCUS",focus,flush=True)
+                    else:
+                        print("BMCAR_DETAIL_PROBE",r.status_code,url,"TYPE",type(d).__name__,flush=True)
+                except Exception:
+                    print("BMCAR_DETAIL_PROBE",r.status_code,url,"TEXT",repr(r.text[:2000]),flush=True)
             except Exception as e:
                 print("BMCAR_DETAIL_PROBE_ERROR",url,repr(e),flush=True)
     except Exception as e:
