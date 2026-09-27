@@ -50,10 +50,31 @@ def _is_exact_330e_touring(item):
     return ("330e" in name or "330e" in model) and "touring" in (name+model+segment)
 
 
-def _vehicle_from_api(item):
+def _fetch_detail(slug, timeout=6):
+    if not slug:
+        return {}
+    try:
+        r=requests.get(API+"/"+slug,headers=HEADERS,timeout=timeout)
+        r.raise_for_status()
+        payload=r.json()
+        data=payload.get("data",payload) if isinstance(payload,dict) else {}
+        return data if isinstance(data,dict) else {}
+    except Exception:
+        return {}
+
+
+def _vehicle_from_api(item, timeout=6):
     slug=item.get("slug") or ""
     if not slug:
         return None
+
+    # The detail endpoint is what powers the individual BMcar vehicle page.
+    # Prefer its live values over the catalogue row when available.
+    detail=_fetch_detail(slug,timeout=timeout)
+    merged=dict(item)
+    if detail:
+        merged.update({k:v for k,v in detail.items() if v is not None})
+    item=merged
 
     # BMcar's current public API exposes both price and priceCalculated.
     # priceCalculated is the value to present when a campaign/discount is active.
@@ -81,13 +102,13 @@ def _vehicle_from_api(item):
         model="Série 3",
         variant=(item.get("name") or item.get("modelName") or "330e Touring").replace("BMW ","").strip(),
         body="Touring",
-        year=item.get("year"),
+        year=item.get("year") or item.get("plateYear"),
         mileage_km=item.get("kilometers"),
         price_eur=float(current) if isinstance(current,(int,float)) and current>0 else None,
         dealer="BMcar",
         fuel="Híbrido Plug-In",
         power_cv=item.get("powerHp"),
-        condition=condition,
+        condition=("demo_service" if item.get("isDemonstration") else ("new_stock" if item.get("isNew") else condition)),
         list_price_eur=list_price,
         discount_eur=discount_eur,
         discount_pct=discount_pct,
@@ -95,17 +116,24 @@ def _vehicle_from_api(item):
     )
 
 
-def discover_bmw_330e_touring(limit=20, timeout=7):
+def inventory_summary_bmw_330e_touring(limit=20, timeout=7):
     try:
         items=_fetch_inventory(timeout=timeout)
     except Exception:
-        return []
+        return {"vehicles":[],"candidate_count":0,"exact_count":0}
 
+    exact=[x for x in items if isinstance(x,dict) and _is_exact_330e_touring(x)]
     out=[]
-    for item in items:
-        if not isinstance(item,dict) or not _is_exact_330e_touring(item):
-            continue
-        v=_vehicle_from_api(item)
+    for item in exact[:limit]:
+        v=_vehicle_from_api(item,timeout=min(timeout,6))
         if v:
             out.append(v)
-    return out[:limit]
+    return {
+        "vehicles":out,
+        "candidate_count":len(items),
+        "exact_count":len(out),
+    }
+
+
+def discover_bmw_330e_touring(limit=20, timeout=7):
+    return inventory_summary_bmw_330e_touring(limit=limit,timeout=timeout)["vehicles"]
