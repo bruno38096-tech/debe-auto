@@ -5,6 +5,14 @@ from search_poc.vehicle_catalog import CATALOG, BODY_STYLES, brands, models_for,
 
 app=Flask(__name__)
 
+# Temporary one-deploy self-test; removed after validating BMcar API mapping.
+try:
+    from search_poc.connectors.bmcar import discover_bmw_330e_touring as _bmcar_selftest
+    _bm=_bmcar_selftest(limit=30,timeout=7)
+    print("BMCAR_SELFTEST",[(v.source_id,v.variant,v.year,v.mileage_km,v.price_eur,v.url) for v in _bm],flush=True)
+except Exception as _e:
+    print("BMCAR_SELFTEST_ERROR",repr(_e),flush=True)
+
 HTML=r'''<!doctype html>
 <html lang="pt">
 <head>
