@@ -162,6 +162,31 @@ def api_search():
     payload["selectors"]={"make":make,"model":model,"variant":variant,"body":body}
     return jsonify(payload)
 
+@app.get("/api/debug-bmcar")
+def debug_bmcar():
+    import requests,re
+    from bs4 import BeautifulSoup
+    url="https://www.bmcar.pt/veiculos?brandIds%5B%5D=c427305a-a22d-433f-99dd-2198ccf858da&engineTypeIds%5B%5D=9&brandSegmentIds%5B%5D=9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
+    headers={"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36","Accept-Language":"pt-PT,pt;q=0.9"}
+    try:
+        r=requests.get(url,headers=headers,timeout=8)
+        html=r.text
+        soup=BeautifulSoup(html,"html.parser")
+        scripts=[s.get("src") for s in soup.find_all("script") if s.get("src")]
+        inline="\n".join(s.get_text("\n",strip=True) for s in soup.find_all("script") if not s.get("src"))
+        links=[a.get("href") for a in soup.find_all("a",href=True) if "/veiculos/" in a.get("href","")]
+        pats=[]
+        scan=html+"\n"+inline
+        for p in [r'https?://[^"\'\s<>]+',r'/(?:api|graphql|vehicles|veiculos)[^"\'\s<>]+',r'[^"\'\s<>]{0,80}(?:brandIds|engineTypeIds|brandSegmentIds)[^"\'\s<>]{0,120}']:
+            pats.extend(re.findall(p,scan,re.I))
+        interesting=[]
+        for x in pats:
+            if any(k in x.lower() for k in ("api","graphql","vehicle","veiculo","brandid","enginetype","brandsegment")) and x not in interesting:
+                interesting.append(x[:500])
+        return jsonify({"status":r.status_code,"length":len(html),"scripts":scripts[:80],"vehicle_links":links[:80],"interesting":interesting[:120],"has_next_data":"__NEXT_DATA__" in html,"html_head":html[:1200]})
+    except Exception as e:
+        return jsonify({"error":repr(e)}),500
+
 @app.get("/api/sources")
 def api_sources():
     return jsonify({"count":len(SOURCES),"sources":SOURCES})
