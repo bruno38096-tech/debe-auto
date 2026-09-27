@@ -123,7 +123,7 @@ function render(d){
   document.getElementById('notice').textContent=d.beta_note||'';
   const stat=[['total','Carros encontrados'],['new_stock','Novos / stock'],['used_certified','Certificados'],['explicit_discount','Com desconto explícito']];
   document.getElementById('stats').innerHTML=stat.map(x=>'<div class="stat"><b>'+(s[x[0]]||0)+'</b><span>'+x[1]+'</span></div>').join('');
-  document.getElementById('sources').innerHTML=(d.sources||[]).map(x=>'<div class="src"><span>'+esc(x.name)+'</span><span class="'+x.status+'">'+(x.count?x.count:x.status)+'</span></div>').join('');
+  document.getElementById('sources').innerHTML=(d.sources||[]).map(x=>'<div class="src"><span>'+esc(x.name)+'</span><span class="'+x.status+'">'+(x.count?x.count:(x.status==='empty'?'0 exatos':x.status))+'</span></div>').join('');
   if(!(d.results||[]).length){document.getElementById('results').innerHTML='<div class="notice">Não encontrei resultados nesta passagem. Em fontes ainda sem conetor direto, isto pode significar apenas que o stock não está indexado.</div>';return}
   document.getElementById('results').innerHTML=d.results.map(x=>{
     const tags=[condLabel[x.condition]||x.condition,x.year,x.mileage_km!=null?new Intl.NumberFormat('pt-PT').format(x.mileage_km)+' km':'',x.availability,x.dealer,(x.also_at&&x.also_at.length?'Também em '+x.also_at.join(', '):'')].filter(Boolean);
