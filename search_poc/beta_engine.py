@@ -240,6 +240,11 @@ def _title_tokens(title):
     return {x for x in re.findall(r"[a-z0-9]+",ascii_low(title or "")) if len(x)>=2 and x not in stop}
 
 def _same_vehicle(a,b):
+    # Deduplicate only BETWEEN different sources. Two separate units in the
+    # same dealer/manufacturer inventory must remain separate even if their
+    # year, price and mileage happen to be similar.
+    if a.get("source_key")==b.get("source_key"):
+        return False
     # Conservative cross-source duplicate heuristic. Exact URLs are handled
     # separately; this only merges when year, price, mileage and model tokens agree.
     if not all(a.get(k) is not None and b.get(k) is not None for k in ("price_eur","mileage_km","year")):
