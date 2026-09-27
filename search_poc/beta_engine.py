@@ -384,6 +384,20 @@ def _direct_specials(q):
     """Use the direct PoC connectors where the query matches their validated scope."""
     out=[]
     low=ascii_low(q)
+    if ("mercedes" in low and "glc" in low and ("300 e" in low or "300e" in low)):
+        try:
+            from search_poc.connectors.carclasse import discover_glc_300e
+            for v in discover_glc_300e(timeout=6):
+                d=v.to_dict(); d.update({
+                    "source_key":"carclasse","source":"Carclasse","official":True,
+                    "title":"Mercedes-Benz GLC 300 e AMG Advanced 4Matic",
+                    "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · Carclasse".replace(",","."),
+                    "dealer":"Carclasse","condition":v.condition,
+                    "availability":"Em stock","discovery":"direct_connector"
+                })
+                out.append(d)
+        except Exception:
+            pass
     if "bmw" in low and "330" in low and "touring" in low:
         try:
             from search_poc.connectors.bmw_premium import fetch_bmw_330e_touring
@@ -435,8 +449,12 @@ def _dedup(rows):
         for ex in out:
             if _same_vehicle(ex,r):
                 ex.setdefault("also_at",[])
+                ex.setdefault("alternate_links",[])
                 if r.get("source") and r.get("source")!=ex.get("source") and r["source"] not in ex["also_at"]:
                     ex["also_at"].append(r["source"])
+                if r.get("url") and r.get("source") and r.get("url")!=ex.get("url"):
+                    if not any(x.get("url")==r.get("url") for x in ex["alternate_links"]):
+                        ex["alternate_links"].append({"source":r["source"],"url":r["url"]})
                 # Prefer richer/direct data while preserving the original source link.
                 for k in ("list_price_eur","discount_eur","discount_pct","availability","dealer"):
                     if not ex.get(k) and r.get(k): ex[k]=r[k]
@@ -444,6 +462,7 @@ def _dedup(rows):
         if merged: continue
         if u: seen_urls.add(u)
         r.setdefault("also_at",[])
+        r.setdefault("alternate_links",[])
         out.append(r)
     return out
 
