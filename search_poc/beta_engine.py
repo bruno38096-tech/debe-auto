@@ -398,6 +398,19 @@ def _direct_specials(q):
                 out.append(d)
         except Exception:
             pass
+        try:
+            from search_poc.connectors.mercedes_certified import discover_glc_300e_suv
+            for v in discover_glc_300e_suv(timeout=4):
+                d=v.to_dict(); d.update({
+                    "source_key":"mercedes_certified","source":"Mercedes-Benz Certified","official":True,
+                    "title":"Mercedes-Benz GLC 300 e 4MATIC",
+                    "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),
+                    "condition":"used_certified","availability":"",
+                    "discovery":"direct_connector"
+                })
+                out.append(d)
+        except Exception:
+            pass
     if "bmw" in low and "330" in low and "touring" in low:
         try:
             from search_poc.connectors.bmw_premium import fetch_bmw_330e_touring
