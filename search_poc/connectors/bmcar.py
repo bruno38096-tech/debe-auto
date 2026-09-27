@@ -1,151 +1,118 @@
-"""BMcar inventory connector for the DEBE Search beta.
+"""BMcar inventory connector backed by BMcar's public vehicle API.
 
-For BMW 330e Touring we query BMcar's own filtered inventory page first,
-then open each matching detail page. Prices are NEVER taken from stale
-fallback data: if a live price cannot be read, price_eur remains None.
+The BMcar Next.js frontend uses:
+  GET https://api.bmcar.pt/vehicle/portal
+  x-version: 2
+
+Important: the frontend converts URL bracket parameters to arrays and its
+serializer sends the API fields without [] for a single value. Using bracket
+keys directly against the API causes those filters to be ignored.
 """
 import re
 import requests
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, quote_plus
 from search_poc.models import Vehicle
 
+API="https://api.bmcar.pt/vehicle/portal"
+DETAIL_BASE="https://www.bmcar.pt/veiculos/"
 HEADERS={
-    "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
+    "User-Agent":"Mozilla/5.0 (compatible; DEBE-Search-Beta/0.5)",
+    "Accept":"application/json",
     "Accept-Language":"pt-PT,pt;q=0.9",
+    "x-version":"2",
 }
-BASE="https://www.bmcar.pt"
-FILTER_330E_TOURING=(
-    "https://www.bmcar.pt/veiculos?"
-    "brandIds%5B%5D=c427305a-a22d-433f-99dd-2198ccf858da&"
-    "engineTypeIds%5B%5D=9&"
-    "brandSegmentIds%5B%5D=9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
-)
-KNOWN_URLS=[
-    "https://www.bmcar.pt/veiculos/bmw-serie-3-touring-330e-touring-pack-desportivo-m-pro-v51l-9d87",
-]
 
-def _fetch(url, timeout=6):
-    # Source first.
-    try:
-        r=requests.get(url,headers=HEADERS,timeout=timeout)
-        if r.ok and len(r.text)>400:
-            return r.text,"html"
-    except Exception:
-        pass
-    # Reader fallback for datacentre/IP blocking. Still reads the current source.
-    try:
-        r=requests.get("https://r.jina.ai/"+url,headers=HEADERS,timeout=timeout)
-        if r.ok and len(r.text)>250:
-            return r.text,"markdown"
-    except Exception:
-        pass
-    return "",""
+BMW_BRAND_ID="c427305a-a22d-433f-99dd-2198ccf858da"
+HYBRID_PETROL_ID="9"
+SERIE3_TOURING_SEGMENT_ID="9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
 
-def _vehicle_links(text, mode):
-    out=[]
-    if not text:return out
-    if mode=="html":
-        soup=BeautifulSoup(text,"html.parser")
-        for a in soup.find_all("a",href=True):
-            href=urljoin(BASE,a.get("href",""))
-            if "/veiculos/" in href and href.rstrip("/")!=BASE+"/veiculos" and href not in out:
-                out.append(href)
-    else:
-        # Jina markdown.
-        for m in re.finditer(r"\]\((https?://(?:www\.)?bmcar\.pt/veiculos/[^)\s]+)\)",text,re.I):
-            href=m.group(1)
-            if href not in out:out.append(href)
-        # Raw URLs are also common in reader output.
-        for m in re.finditer(r"https?://(?:www\.)?bmcar\.pt/veiculos/[A-Za-z0-9_\-/%]+",text,re.I):
-            href=m.group(0).rstrip(".,)")
-            if href not in out:out.append(href)
-    return out
 
-def _num(s):
-    d=re.sub(r"\D","",s or "")
-    return int(d) if d else None
+def _is_330e_touring(item):
+    text=" ".join(str(item.get(k) or "") for k in (
+        "name","modelName","brandSegmentName","version"
+    )).lower()
+    compact=re.sub(r"[^a-z0-9]","",text)
+    return "330e" in compact and "touring" in text
 
-def _price_from_text(text):
-    # BMcar may expose PVP and/or a lower ready-payment/flash-sale price.
-    values=[]
-    patterns=[
-      r"(?:Pronto\s+Pagamento|Flash\s+Sale)[^\d€]{0,80}([\d\.\s]+(?:,\d{2})?)\s*€",
-      r"PVP:\s*([\d\.\s]+(?:,\d{2})?)\s*€",
-      r"Pre[cç]o[^\d€]{0,30}([\d\.\s]+(?:,\d{2})?)\s*€",
-    ]
-    for p in patterns:
-        m=re.search(p,text or "",re.I|re.S)
-        if m:
-            raw=m.group(1).replace(" ","").replace(".","").replace(",",".")
-            try:
-                v=float(raw)
-                if 5000<=v<=500000:values.append(v)
-            except Exception:pass
-    # When the page exposes several purchase prices, the current cash price is
-    # the lowest credible amount. This avoids showing an obsolete PVP as current.
-    return min(values) if values else None
 
-def _parse_detail(url, timeout=6):
-    page,mode=_fetch(url,timeout)
-    if not page:return None
-    raw=BeautifulSoup(page,"html.parser").get_text("\n",strip=True) if mode=="html" else page
-    low=raw.lower()
-    compact=re.sub(r"\s+","",low)
-    if "330e" not in compact or "touring" not in low:return None
+def _condition(item):
+    tags={str(x).lower() for x in (item.get("productTags") or [])}
+    if "bmwpremium" in tags:
+        return "used_certified"
+    km=item.get("kilometers")
+    if km is not None and km <= 100:
+        return "km0"
+    return "used"
 
-    ym=re.search(r"Ano\s+(20\d{2})",raw,re.I)
-    km=re.search(r"Quil[oó]metros\s+([\d .]+)",raw,re.I)
-    if not km:
-        km=re.search(r"\b(\d{1,3}(?:[\.\s]\d{3}))\s*km\b",raw,re.I)
-    price=_price_from_text(raw)
 
-    # Title/variant.
-    tm=re.search(r"BMW\s+(?:S[eé]rie\s*3\s+Touring\s+)?330e\s+Touring[^\n]{0,100}",raw,re.I)
-    title=tm.group(0).strip() if tm else "BMW 330e Touring"
-
-    return Vehicle(
-        source="bmcar",source_id=url.rstrip("/").split("/")[-1],url=url,
-        make="BMW",model="Série 3",variant=title.replace("BMW ","").strip(),
-        body="Touring",year=int(ym.group(1)) if ym else None,
-        mileage_km=_num(km.group(1)) if km else None,
-        price_eur=price,dealer="BMcar",fuel="Híbrido Plug-In",power_cv=292,
-        condition="used_certified",is_official_stock=True,
-    )
-
-def discover_bmw_330e_touring(limit=20, timeout=6):
-    urls=[]
-    listing,mode=_fetch(FILTER_330E_TOURING,timeout)
-    for url in _vehicle_links(listing,mode):
-        if url not in urls:urls.append(url)
-
-    # Known detail URLs only help discovery; no price/year/km fallback is used.
-    for url in KNOWN_URLS:
-        if url not in urls:urls.append(url)
-
-    # Lightweight public discovery can add newly-created detail pages if the
-    # filtered inventory happens to be client-side only.
-    try:
-        q="site:bmcar.pt/veiculos/ BMW 330e Touring"
-        rss="https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(q)
-        r=requests.get(rss,headers=HEADERS,timeout=min(timeout,5))
-        if r.ok:
-            soup=BeautifulSoup(r.text,"xml")
-            for item in soup.find_all("item"):
-                link=item.link.get_text(strip=True) if item.link else ""
-                if "/veiculos/" in link and link not in urls:urls.append(link)
-    except Exception:
-        pass
+def discover_bmw_330e_touring(limit=30, timeout=7):
+    params={
+        "page":1,
+        "size":100,
+        "brandIds":BMW_BRAND_ID,
+        "engineTypeIds":HYBRID_PETROL_ID,
+        "brandSegmentIds":SERIE3_TOURING_SEGMENT_ID,
+    }
+    r=requests.get(API,params=params,headers=HEADERS,timeout=timeout)
+    r.raise_for_status()
+    payload=r.json()
+    data=payload.get("data") or {}
+    items=data.get("items") or []
 
     out=[]
-    seen=set()
-    for url in urls[:max(limit,20)]:
-        try:
-            v=_parse_detail(url,timeout=timeout)
-            if not v:continue
-            sig=(v.source_id,v.url)
-            if sig in seen:continue
-            seen.add(sig);out.append(v)
-        except Exception:
+    for item in items:
+        if not _is_330e_touring(item):
             continue
-    return out[:limit]
+
+        current=item.get("priceCalculated")
+        if current is None:
+            current=item.get("price")
+        list_price=item.get("price")
+        try:
+            current=float(current) if current is not None else None
+        except (TypeError,ValueError):
+            current=None
+        try:
+            list_price=float(list_price) if list_price is not None else None
+        except (TypeError,ValueError):
+            list_price=None
+
+        # Only show a crossed-out list price when it is genuinely higher.
+        discount_eur=None
+        discount_pct=None
+        shown_list=None
+        if current is not None and list_price is not None and list_price > current:
+            shown_list=list_price
+            discount_eur=round(list_price-current,2)
+            discount_pct=round(discount_eur/list_price*100,1)
+
+        slug=str(item.get("slug") or "").strip("/")
+        url=DETAIL_BASE+slug if slug else "https://www.bmcar.pt/veiculos"
+        model_name=str(item.get("modelName") or "330e Touring")
+        version=str(item.get("version") or "").strip()
+        title=str(item.get("name") or f"BMW {model_name}").strip()
+        if version and version.lower() not in title.lower():
+            title=f"{title} {version}"
+
+        out.append(Vehicle(
+            source="bmcar",
+            source_id=str(item.get("id") or item.get("referenceId") or slug),
+            url=url,
+            make="BMW",
+            model="Série 3",
+            variant=f"{model_name} {version}".strip(),
+            body="Touring",
+            year=int(item["year"]) if item.get("year") else None,
+            mileage_km=int(item["kilometers"]) if item.get("kilometers") is not None else None,
+            price_eur=current,
+            dealer="BMcar",
+            fuel="Híbrido Plug-In",
+            power_cv=int(item["powerHp"]) if item.get("powerHp") else None,
+            condition=_condition(item),
+            list_price_eur=shown_list,
+            discount_eur=discount_eur,
+            discount_pct=discount_pct,
+            is_official_stock=True,
+        ))
+        if len(out)>=limit:
+            break
+    return out
