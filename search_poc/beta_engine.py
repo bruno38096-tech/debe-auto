@@ -151,53 +151,146 @@ def _discount(prices, blob):
     return (lo,hi,round(d/hi*100,1))
 
 
+def _query_aliases(q):
+    """Generate robust discovery variants without requiring exact dealer wording."""
+    q=clean(q)
+    out=[q]
+    # 300 e / 300e and 300 de / 300de are both common in Portuguese stock systems.
+    out.append(re.sub(r"\b(\d{3})\s+(de|e)\b",r"\1\2",q,flags=re.I))
+    out.append(q.replace("Mercedes-Benz","Mercedes"))
+    # Dealer titles often omit the BMW series name: "BMW 330e Touring".
+    out.append(re.sub(r"\bS[eé]rie\s+\d+\b","",q,flags=re.I))
+    # Body terms help the UI but can over-constrain search engine discovery.
+    out.append(re.sub(r"\b(SUV|crossover|station wagon|carrinha|Touring|Avant|Estate|Station|Variant|Combi|Sportstourer|SW)\b","",q,flags=re.I))
+    # Compact aliases after the above transformations.
+    more=[]
+    for x in out:
+        more.append(re.sub(r"\b(\d{3})\s+(de|e)\b",r"\1\2",x,flags=re.I))
+        more.append(x.replace("Mercedes-Benz","Mercedes"))
+    return [clean(x) for x in dict.fromkeys(out+more) if clean(x)]
+
+
+def _condition_from_detail(text, source):
+    b=ascii_low(text)
+    m=re.search(r"Condi[cç][aã]o\s*(?:\n|:)?\s*(Novo|Servi[cç]o|Usado|Seminovo|KM0)",text or "",re.I)
+    if m:
+        v=ascii_low(m.group(1))
+        if "novo"==v:return "new_stock"
+        if "servico" in v:return "demo_service"
+        if "seminovo" in v or "km0" in v:return "km0"
+        if "usado" in v:
+            return "used_certified" if any(x in b for x in ("certified","premium selection","approved","selektion","selek")) else "used"
+    return _condition(text,source)
+
+
+def _detail_enrich(row, source, timeout=5):
+    """Read dealer detail pages so results do not depend only on search snippets."""
+    if source.get("key") not in {"carclasse","bmcar","santogal","caetano","mcoutinho","filinto"}:
+        return row
+    try:
+        r=requests.get(row["url"],headers=HEADERS,timeout=timeout)
+        r.raise_for_status()
+        soup=BeautifulSoup(r.text,"html.parser")
+        text=soup.get_text("\n",strip=True)
+        h1=soup.find("h1")
+        h2=soup.find("h2")
+        title=clean(h1.get_text(" ",strip=True) if h1 else (h2.get_text(" ",strip=True) if h2 else row.get("title","")))
+        if title and len(title)>5:
+            row["title"]=title
+
+        # Generic facts.
+        km=_km(text)
+        yr=_year(text)
+        if km is not None: row["mileage_km"]=km
+        if yr is not None: row["year"]=yr
+        row["condition"]=_condition_from_detail(text,source)
+
+        if source.get("key")=="carclasse":
+            p=re.search(r"P\.V\.P\.\s*([\d\.\s]+)\s*(?:EUR|€)",text,re.I)
+            newp=re.search(r"Pre[cç]o\s+em\s+novo\s*([\d\.\s]+)\s*(?:EUR|€)",text,re.I)
+            current=float(re.sub(r"\D","",p.group(1))) if p else None
+            listp=float(re.sub(r"\D","",newp.group(1))) if newp else None
+            if current: row["price_eur"]=current
+            if listp and current and listp>current:
+                row["list_price_eur"]=listp
+                row["discount_eur"]=round(listp-current,2)
+                row["discount_pct"]=round((listp-current)/listp*100,1)
+
+        elif source.get("key")=="bmcar":
+            p=re.search(r"PVP:\s*([\d\.\s]+(?:,\d{2})?)\s*€",text,re.I)
+            if p:
+                raw=p.group(1).replace(" ","").replace(".","").replace(",",".")
+                try: row["price_eur"]=float(raw)
+                except Exception: pass
+            row["dealer"]="BMcar"
+
+        # Keep a useful concise snippet from the actual page.
+        facts=[]
+        if row.get("year"): facts.append(str(row["year"]))
+        if row.get("mileage_km") is not None: facts.append(f'{row["mileage_km"]:,} km'.replace(",","."))
+        if row.get("dealer"): facts.append(row["dealer"])
+        if facts: row["snippet"]=" · ".join(facts)
+        row["discovery"]="dealer_detail"
+    except Exception:
+        pass
+    return row
+
+
 def _source_query(q, source, limit=3, timeout=8):
     domain=source["domain"]
-    sq=f'site:{domain} "{q}"'
-    urls=[
-        "https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(sq),
-        "https://r.jina.ai/https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(sq),
-    ]
-    items=[]
-    error=""
-    for idx,u in enumerate(urls):
-        try:
-            r=requests.get(u,headers=HEADERS,timeout=timeout)
-            r.raise_for_status()
-            if idx==0 and "<item" in r.text.lower():
-                soup=BeautifulSoup(r.text,"xml")
-                for item in soup.find_all("item"):
-                    title=clean(item.title.get_text(" ",strip=True) if item.title else "")
-                    link=clean(item.link.get_text(strip=True) if item.link else "")
-                    desc=clean(BeautifulSoup(item.description.get_text(" ",strip=True) if item.description else "","html.parser").get_text(" ",strip=True))
-                    if domain not in urlparse(link).netloc.lower(): continue
-                    items.append((title,desc,link))
-                    if len(items)>=limit:break
-            else:
-                for m in re.finditer(r"\[([^\]\n]{3,220})\]\((https?://[^)\s]+)\)",r.text):
-                    title=clean(m.group(1)); link=html.unescape(m.group(2))
-                    if domain not in urlparse(link).netloc.lower(): continue
-                    tail=clean(r.text[m.end():m.end()+600])
-                    items.append((title,tail,link))
-                    if len(items)>=limit:break
-            if items: break
-        except Exception as e:
-            error=str(e)[:120]
+    items=[]; error=""
+    # Do NOT quote the whole vehicle string: dealer titles use different naming
+    # conventions (330e vs Série 3 330e; GLC 300e vs GLC 300 e).
+    for alias in _query_aliases(q):
+        sq=f"site:{domain} {alias}"
+        urls=[
+            "https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(sq),
+            "https://r.jina.ai/https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q="+quote_plus(sq),
+        ]
+        for idx,u in enumerate(urls):
+            try:
+                r=requests.get(u,headers=HEADERS,timeout=timeout)
+                r.raise_for_status()
+                if idx==0 and "<item" in r.text.lower():
+                    soup=BeautifulSoup(r.text,"xml")
+                    for item in soup.find_all("item"):
+                        title=clean(item.title.get_text(" ",strip=True) if item.title else "")
+                        link=clean(item.link.get_text(strip=True) if item.link else "")
+                        desc=clean(BeautifulSoup(item.description.get_text(" ",strip=True) if item.description else "","html.parser").get_text(" ",strip=True))
+                        if domain not in urlparse(link).netloc.lower(): continue
+                        items.append((title,desc,link))
+                        if len(items)>=limit:break
+                else:
+                    for m in re.finditer(r"\[([^\]\n]{3,220})\]\((https?://[^)\s]+)\)",r.text):
+                        title=clean(m.group(1)); link=html.unescape(m.group(2))
+                        if domain not in urlparse(link).netloc.lower(): continue
+                        tail=clean(r.text[m.end():m.end()+600])
+                        items.append((title,tail,link))
+                        if len(items)>=limit:break
+                if len(items)>=limit: break
+            except Exception as e:
+                error=str(e)[:120]
+        if len(items)>=limit: break
 
     out=[]; seen=set()
+    # Core terms ignore manufacturer filler/body terminology so that official
+    # and dealer naming differences do not remove valid cars.
+    qlow=ascii_low(q)
+    core=[x for x in re.findall(r"[a-z0-9]+",qlow) if len(x)>=2 and x not in {
+        "mercedes","benz","bmw","audi","volvo","porsche","serie","suv","touring","avant",
+        "estate","station","wagon","carrinha","classe"
+    }]
     for title,desc,link in items:
         if link in seen:continue
         seen.add(link)
         blob=title+" "+desc
-        # Guard against unrelated indexed pages.
-        qterms=[x for x in re.findall(r"[a-z0-9]+",ascii_low(q)) if len(x)>=2]
         hay=ascii_low(blob+" "+link)
-        hits=sum(1 for x in qterms if x in hay)
-        need=1 if len(qterms)<=2 else max(2,len(qterms)-1)
-        if qterms and hits<need:continue
+        hits=sum(1 for x in core if x in hay or re.sub(r"[^a-z0-9]","",x) in re.sub(r"[^a-z0-9]","",hay))
+        need=1 if len(core)<=2 else max(1,len(core)-1)
+        if core and hits<need:continue
         prices=_money_values(blob)
         current,list_price,disc_pct=_discount(prices,blob)
-        out.append({
+        row={
             "source_key":source["key"],"source":source["name"],"official":source["official"],
             "title":title,"snippet":desc[:420],"url":link,
             "condition":_condition(blob,source),"availability":_availability(blob),
@@ -205,9 +298,9 @@ def _source_query(q, source, limit=3, timeout=8):
             "discount_eur":round(list_price-current,2) if current and list_price else None,
             "discount_pct":disc_pct,"mileage_km":_km(blob),"year":_year(blob),
             "dealer":_dealer(blob),"discovery":"public_index",
-        })
+        }
+        out.append(_detail_enrich(row,source,timeout=min(timeout,5)))
     return out,error
-
 
 def _direct_specials(q):
     """Use the direct PoC connectors where the query matches their validated scope."""
