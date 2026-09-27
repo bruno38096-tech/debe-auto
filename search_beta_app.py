@@ -156,6 +156,19 @@ def _startup_bmcar_diag():
         print("BMCAR_DIAG_SCRIPTS",scripts[:80],flush=True)
         print("BMCAR_DIAG_LINKS",links[:40],flush=True)
         print("BMCAR_DIAG_INTERESTING",interesting[:80],flush=True)
+        try:
+            rsc_url=url+("&" if "?" in url else "?")+"_rsc=1"
+            rsc_headers=dict(headers)
+            rsc_headers.update({"RSC":"1","Next-Url":"/veiculos","Accept":"text/x-component,*/*;q=0.8"})
+            rr=requests.get(rsc_url,headers=rsc_headers,timeout=8)
+            lowr=rr.text.lower()
+            samples=[]
+            for needle in ["330e","touring","31700","46900","vehicle","price"]:
+                p=lowr.find(needle)
+                if p>=0:samples.append((needle,re.sub(r"\s+"," ",rr.text[max(0,p-700):p+1800])[:2500]))
+            print("BMCAR_DIAG_RSC",rr.status_code,"LEN",len(rr.text),"CT",rr.headers.get("content-type"),"COUNTS",{"330e":lowr.count("330e"),"touring":lowr.count("touring")},"SAMPLES",samples,flush=True)
+        except Exception as e:
+            print("BMCAR_DIAG_RSC_ERROR",repr(e),flush=True)
         low=r.text.lower()
         for needle in ["330e","31700","46900","vehicleid","stockid","pvp","flash sale","bmw premium selection"]:
             poss=[m.start() for m in re.finditer(re.escape(needle),low)]
