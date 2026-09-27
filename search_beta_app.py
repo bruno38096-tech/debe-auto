@@ -157,6 +157,18 @@ def _startup_bmcar_diag():
         print("BMCAR_DIAG_SCRIPTS",scripts[:80],flush=True)
         print("BMCAR_DIAG_LINKS",links[:40],flush=True)
         print("BMCAR_DIAG_INTERESTING",interesting[:80],flush=True)
+        try:
+            api_url="https://api.bmcar.pt/vehicle/portal"
+            api_params=[
+                ("brandIds[]","c427305a-a22d-433f-99dd-2198ccf858da"),
+                ("engineTypeIds[]","9"),
+                ("brandSegmentIds[]","9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"),
+                ("page","1"),("size","100")
+            ]
+            ar=requests.get(api_url,params=api_params,headers={**headers,"x-version":"2","Accept":"application/json"},timeout=8)
+            print("BMCAR_API_PROBE",ar.status_code,ar.url,"CT",ar.headers.get("content-type"),"HEAD",ar.text[:8000],flush=True)
+        except Exception as e:
+            print("BMCAR_API_PROBE_ERROR",repr(e),flush=True)
         # Directly probe the public vehicle API used by the BMcar frontend.
         api="https://api.bmcar.pt/vehicle/portal"
         base_params={"page":1,"size":100}
