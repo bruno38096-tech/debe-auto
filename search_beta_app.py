@@ -179,52 +179,33 @@ def _startup_bmcar_diag():
             for p in poss[:12]:
                 samples.append(re.sub(r"\\s+"," ",r.text[max(0,p-350):p+700])[:1100])
             print("BMCAR_DIAG_NEEDLE",needle,"COUNT",len(poss),"SAMPLES",samples,flush=True)
-        # Scan all Next.js chunks concurrently for the vehicle-filter transport.
+        # Targeted scan: find the BMcar modules that define the vehicle queries.
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        def scan_chunk(src):
+        targets=[
+            "341219,(", "654704,(", "useQueryGetVehicles",
+            "useQueryGetVehiclesFilterOptions", "getVehicles",
+            "GetVehicles", "vehicleFilter", "vehiclesFilter"
+        ]
+        def scan_target(src):
+            if not src.endswith(".js"): return src,[]
             try:
                 js=requests.get("https://www.bmcar.pt"+src,headers=headers,timeout=5).text
                 lowjs=js.lower()
-                needles=["654704","539665","388615","175696","brandsegmentids","enginetypeids","vehicleconditionids","totalvehicles","showonlyavailable","getvehicles","/vehicles","/veiculos","graphql","api"]
                 found=[]
-                for needle in needles:
-                    pos=0; count=0
-                    while True:
-                        p=lowjs.find(needle,pos)
-                        if p<0 or count>=5:break
-                        snippet=re.sub(r"\s+"," ",js[max(0,p-1000):p+1800])
-                        found.append((needle,snippet[:2800]))
-                        pos=p+len(needle); count+=1
+                for needle in targets:
+                    p=lowjs.find(needle.lower())
+                    if p>=0:
+                        snippet=re.sub(r"\s+"," ",js[max(0,p-1800):p+4200])
+                        found.append((needle,snippet[:6000]))
                 return src,found
             except Exception:
                 return src,[]
         with ThreadPoolExecutor(max_workers=10) as ex:
-            futs=[ex.submit(scan_chunk,src) for src in scripts]
+            futs=[ex.submit(scan_target,src) for src in scripts]
             for fut in as_completed(futs):
                 src,found=fut.result()
                 if found:
-                    print("BMCAR_DIAG_CHUNK",src,"FOUND",found[:20],flush=True)
-        def scan_map(src):
-            try:
-                map_url="https://www.bmcar.pt"+src+".map"
-                mr=requests.get(map_url,headers=headers,timeout=5)
-                if not mr.ok:return src,mr.status_code,0,[]
-                txt=mr.text
-                lowm=txt.lower()
-                found=[]
-                for needle in ["brandsegmentids","enginetypeids","vehicleconditionids","getvehicles","totalvehicles","vehiclequery","vehiclefilter","graphql","api/vehicles","api/veiculos"]:
-                    p=lowm.find(needle)
-                    if p>=0:
-                        found.append((needle,re.sub(r"\s+"," ",txt[max(0,p-1200):p+2500])[:3700]))
-                return src,mr.status_code,len(txt),found
-            except Exception:
-                return src,0,0,[]
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            futs=[ex.submit(scan_map,src) for src in scripts if src.endswith(".js")]
-            for fut in as_completed(futs):
-                src,status,length,found=fut.result()
-                if found:
-                    print("BMCAR_DIAG_MAP",src,"STATUS",status,"LEN",length,"FOUND",found,flush=True)
+                    print("BMCAR_TARGET",src,found,flush=True)
     except Exception as e:
         print("BMCAR_DIAG_ERROR",repr(e),flush=True)
 
