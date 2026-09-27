@@ -154,6 +154,25 @@ def _startup_bmcar_diag():
         print("BMCAR_DIAG_SCRIPTS",scripts[:40],flush=True)
         print("BMCAR_DIAG_LINKS",links[:40],flush=True)
         print("BMCAR_DIAG_INTERESTING",interesting[:80],flush=True)
+        low=r.text.lower()
+        for needle in ["330e","31700","46900","vehicleid","stockid","pvp","flash sale","bmw premium selection"]:
+            poss=[m.start() for m in re.finditer(re.escape(needle),low)]
+            samples=[]
+            for p in poss[:12]:
+                samples.append(re.sub(r"\\s+"," ",r.text[max(0,p-350):p+700])[:1100])
+            print("BMCAR_DIAG_NEEDLE",needle,"COUNT",len(poss),"SAMPLES",samples,flush=True)
+        # Fetch a subset of Next.js chunks and scan for the inventory transport.
+        for src in scripts[-12:]:
+            try:
+                js=requests.get("https://www.bmcar.pt"+src,headers=headers,timeout=5).text
+                hits=[]
+                for pat in [r'fetch\\([^)]{0,400}',r'axios[^;]{0,500}',r'https?://[^"\\'\\s]+',r'/(?:api|graphql)[^"\\'\\s]+',r'[^;]{0,250}(?:vehicles|veiculos|vehicleCondition|brandSegmentIds)[^;]{0,350}']:
+                    for x in re.findall(pat,js,re.I):
+                        if x not in hits:hits.append(x[:700])
+                if hits:
+                    print("BMCAR_DIAG_CHUNK",src,"HITS",hits[:30],flush=True)
+            except Exception as e:
+                pass
     except Exception as e:
         print("BMCAR_DIAG_ERROR",repr(e),flush=True)
 
