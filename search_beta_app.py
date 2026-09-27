@@ -183,7 +183,18 @@ def _startup_bmcar_diag():
             try:
                 ar=requests.get(api,params=params,headers={**headers,"x-version":"2","Accept":"application/json"},timeout=8)
                 head=ar.text[:5000]
-                print("BMCAR_API_PROBE",label,"STATUS",ar.status_code,"URL",ar.url,"LEN",len(ar.text),"BODY",head,flush=True)
+                print("BMCAR_API_PROBE",label,"STATUS",ar.status_code,"URL",ar.url,"LEN",len(ar.text),flush=True)
+                try:
+                    jj=ar.json()
+                    dd=jj.get("data",jj) if isinstance(jj,dict) else jj
+                    items=dd.get("items",[]) if isinstance(dd,dict) else []
+                    print("BMCAR_API_SHAPE",label,"TOP_KEYS",list(jj.keys()) if isinstance(jj,dict) else type(jj).__name__,
+                          "DATA_KEYS",list(dd.keys()) if isinstance(dd,dict) else type(dd).__name__,
+                          "TOTAL",(dd.get("total") if isinstance(dd,dict) else None),
+                          "ITEM_COUNT",len(items),
+                          "FIRST_ITEMS",items[:3],flush=True)
+                except Exception as pe:
+                    print("BMCAR_API_SHAPE",label,"PARSE_ERROR",repr(pe),"HEAD",head[:1200],flush=True)
             except Exception as e:
                 print("BMCAR_API_PROBE",label,"ERROR",repr(e),flush=True)
         try:
