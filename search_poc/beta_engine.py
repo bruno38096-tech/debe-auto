@@ -419,9 +419,19 @@ def _direct_specials(q):
                 out.append(d)
         except Exception: pass
         try:
-            from search_poc.connectors.bmcar import discover_bmw_330e_touring
-            for v in discover_bmw_330e_touring(timeout=9):
-                d=v.to_dict(); d.update({"source_key":"bmcar","source":"BMcar","official":True,"title":f"BMW Série 3 {v.variant} Touring","snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · BMcar".replace(",","."),"condition":v.condition or "used","availability":"","discovery":"direct_connector"})
+            from search_poc.connectors.bmcar import inventory_summary_bmw_330e_touring
+            bm=inventory_summary_bmw_330e_touring(timeout=9)
+            for v in bm["vehicles"]:
+                d=v.to_dict(); d.update({
+                    "source_key":"bmcar","source":"BMcar","official":True,
+                    "title":f"BMW Série 3 {v.variant}",
+                    "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · BMcar".replace(",","."),
+                    "condition":v.condition or "used","availability":"",
+                    "discovery":"direct_connector",
+                    "source_candidate_count":bm.get("candidate_count",0),
+                    "source_exact_count":bm.get("exact_count",0),
+                    "source_candidate_label":"Série 3 Touring híbridos no filtro BMcar",
+                })
                 out.append(d)
         except Exception: pass
         try:
@@ -507,18 +517,31 @@ def search_all(q, condition="all", max_per_source=3):
     # Direct connectors are authoritative for their current scope. Reflect their
     # hits in the source panel even if the generic public-index discovery was empty.
     direct_counts={}
+    direct_meta={}
     for row in direct_results:
         key=row.get("source_key")
-        if key: direct_counts[key]=direct_counts.get(key,0)+1
+        if key:
+            direct_counts[key]=direct_counts.get(key,0)+1
+            cand=row.get("source_candidate_count")
+            if cand is not None:
+                direct_meta[key]={
+                    "candidate_count":int(cand or 0),
+                    "exact_count":int(row.get("source_exact_count") or 0),
+                    "candidate_label":row.get("source_candidate_label") or "",
+                }
     by_key={s["key"]:s for s in statuses}
     for key,count in direct_counts.items():
+        meta=direct_meta.get(key,{})
         if key in by_key:
             by_key[key]["count"]=max(int(by_key[key].get("count") or 0),count)
             by_key[key]["status"]="ok"
             by_key[key]["error"]=""
+            by_key[key].update(meta)
         else:
             src=next((x for x in selected_sources if x["key"]==key),None)
-            statuses.append({"key":key,"name":src["name"] if src else key,"count":count,"status":"ok","error":""})
+            row={"key":key,"name":src["name"] if src else key,"count":count,"status":"ok","error":""}
+            row.update(meta)
+            statuses.append(row)
 
     results=_dedup(results)
     if condition!="all":
