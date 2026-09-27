@@ -166,7 +166,14 @@ def _startup_bmcar_diag():
             try:
                 js=requests.get("https://www.bmcar.pt"+src,headers=headers,timeout=5).text
                 hits=[]
-                for pat in [r'fetch\\([^)]{0,400}',r'axios[^;]{0,500}',r'https?://[^"\\'\\s]+',r'/(?:api|graphql)[^"\\'\\s]+',r'[^;]{0,250}(?:vehicles|veiculos|vehicleCondition|brandSegmentIds)[^;]{0,350}']:
+                patterns=[
+                    r"fetch\\([^)]{0,400}",
+                    r"axios[^;]{0,500}",
+                    r"https?://[^\\\"'\\s]+",
+                    r"/(?:api|graphql)[^\\\"'\\s]+",
+                    r"[^;]{0,250}(?:vehicles|veiculos|vehicleCondition|brandSegmentIds)[^;]{0,350}",
+                ]
+                for pat in patterns:
                     for x in re.findall(pat,js,re.I):
                         if x not in hits:hits.append(x[:700])
                 if hits:
