@@ -136,6 +136,30 @@ init();
 
 
 
+
+def _probe_bmcar_detail_once():
+    try:
+        import requests, json
+        slug="bmw-serie-3-touring-330e-touring-pack-desportivo-m-pro-v51l-9d87"
+        vid="5cb7fa5b-2256-4024-b492-08deec97f54b"
+        headers={"User-Agent":"Mozilla/5.0","Accept":"application/json","x-version":"2"}
+        candidates=[
+            f"https://api.bmcar.pt/vehicle/portal/{slug}",
+            f"https://api.bmcar.pt/vehicle/portal/{vid}",
+            f"https://api.bmcar.pt/vehicle/portal/detail/{slug}",
+            f"https://api.bmcar.pt/vehicle/portal/{slug}/detail",
+        ]
+        for url in candidates:
+            try:
+                r=requests.get(url,headers=headers,timeout=6)
+                print("BMCAR_DETAIL_PROBE",r.status_code,url,r.text[:5000],flush=True)
+            except Exception as e:
+                print("BMCAR_DETAIL_PROBE_ERROR",url,repr(e),flush=True)
+    except Exception as e:
+        print("BMCAR_DETAIL_PROBE_FATAL",repr(e),flush=True)
+
+_probe_bmcar_detail_once()
+
 @app.get("/")
 def home():
     return Response(HTML,mimetype="text/html")
