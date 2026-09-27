@@ -182,9 +182,12 @@ def _startup_bmcar_diag():
         # Targeted scan: find the BMcar modules that define the vehicle queries.
         from concurrent.futures import ThreadPoolExecutor, as_completed
         targets=[
-            "341219,(", "654704,(", "195450,(", "613555,(",
+            "341219,e=>", "341219,e=", "341219,(",
+            "195450,e=>", "195450,e=", "195450,(",
+            "613555,e=>", "613555,e=", "613555,(",
             "useQueryGetVehicles", "useQueryGetVehiclesFilterOptions",
-            "/vehicle/portal", "baseURL", "axios.create", "getVehicles"
+            "/vehicle/portal", "baseURL", "axios.create", "getVehicles",
+            "paramsSerializer", "x-version"
         ]
         def scan_target(src):
             if not src.endswith(".js"): return src,[]
