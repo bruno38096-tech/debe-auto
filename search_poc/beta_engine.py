@@ -281,7 +281,8 @@ def search_all(q, condition="all", max_per_source=3):
         hit=_cache.get(cache_key)
         if hit and now-hit[0]<CACHE_TTL:return hit[1]
 
-    results=_direct_specials(q)
+    direct_results=_direct_specials(q)
+    results=list(direct_results)
     statuses=[]
     selected_sources=_relevant_sources(q)
     with ThreadPoolExecutor(max_workers=min(12,max(1,len(selected_sources)))) as ex:
@@ -294,6 +295,22 @@ def search_all(q, condition="all", max_per_source=3):
                 statuses.append({"key":s["key"],"name":s["name"],"count":len(rows),"status":"ok" if rows else ("error" if err else "empty"),"error":err})
             except Exception as e:
                 statuses.append({"key":s["key"],"name":s["name"],"count":0,"status":"error","error":str(e)[:120]})
+
+    # Direct connectors are authoritative for their current scope. Reflect their
+    # hits in the source panel even if the generic public-index discovery was empty.
+    direct_counts={}
+    for row in direct_results:
+        key=row.get("source_key")
+        if key: direct_counts[key]=direct_counts.get(key,0)+1
+    by_key={s["key"]:s for s in statuses}
+    for key,count in direct_counts.items():
+        if key in by_key:
+            by_key[key]["count"]=max(int(by_key[key].get("count") or 0),count)
+            by_key[key]["status"]="ok"
+            by_key[key]["error"]=""
+        else:
+            src=next((x for x in selected_sources if x["key"]==key),None)
+            statuses.append({"key":key,"name":src["name"] if src else key,"count":count,"status":"ok","error":""})
 
     results=_dedup(results)
     if condition!="all":
