@@ -160,7 +160,8 @@ def _startup_bmcar_diag():
         try:
             rsc_url=url+("&" if "?" in url else "?")+"_rsc=1"
             rsc_headers=dict(headers)
-            rsc_headers.update({"RSC":"1","Next-Url":"/veiculos","Accept":"text/x-component,*/*;q=0.8"})
+            next_url="/veiculos?brandIds%5B%5D=c427305a-a22d-433f-99dd-2198ccf858da&engineTypeIds%5B%5D=9&brandSegmentIds%5B%5D=9f2b387a-fa3a-4e24-554f-08d7d3ff7f58"
+            rsc_headers.update({"RSC":"1","Next-Url":next_url,"Accept":"text/x-component,*/*;q=0.8"})
             rr=requests.get(rsc_url,headers=rsc_headers,timeout=8)
             lowr=rr.text.lower()
             samples=[]
