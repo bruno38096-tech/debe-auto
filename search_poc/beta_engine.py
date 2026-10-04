@@ -388,20 +388,6 @@ def _source_query(q, source, limit=3, timeout=8):
                 error=str(e)[:120]
         if len(items)>=limit: break
 
-    # Always supplement dealer discovery with sitemap candidates. Search-engine
-    # results can be non-empty yet generic/irrelevant; the previous "only if no
-    # items" fallback silently skipped exact stock URLs in that case.
-    try:
-        sitemap_items=_sitemap_candidates(q,source,limit=max(limit*2,6),timeout=timeout)
-        known_links={x[2] for x in items if len(x)>=3}
-        for candidate in sitemap_items:
-            if candidate[2] not in known_links:
-                items.append(candidate)
-                known_links.add(candidate[2])
-    except Exception as e:
-        if not error:error=str(e)[:120]
-
-    out=[]; seen=set()
     # Core terms ignore manufacturer filler/body terminology so that official
     # and dealer naming differences do not remove valid cars.
     qlow=ascii_low(q)
@@ -409,6 +395,30 @@ def _source_query(q, source, limit=3, timeout=8):
         "mercedes","benz","bmw","audi","volvo","porsche","serie","suv","touring","avant",
         "estate","station","wagon","carrinha","classe"
     }]
+
+    def _plausible(item):
+        title,desc,link=item
+        hay=ascii_low((title or "")+" "+(desc or "")+" "+(link or ""))
+        compact=re.sub(r"[^a-z0-9]","",hay)
+        hits=sum(1 for x in core if x in hay or re.sub(r"[^a-z0-9]","",x) in compact)
+        need=1 if len(core)<=2 else max(1,len(core)-1)
+        return (not core) or hits>=need
+
+    # Use sitemap discovery only when indexed results contain no plausible
+    # vehicle match. This fixes the old "non-empty but irrelevant" blind spot
+    # without making every source pay the sitemap latency on every request.
+    if not any(_plausible(item) for item in items):
+        try:
+            sitemap_items=_sitemap_candidates(q,source,limit=max(limit*2,6),timeout=timeout)
+            known_links={x[2] for x in items if len(x)>=3}
+            for candidate in sitemap_items:
+                if candidate[2] not in known_links:
+                    items.append(candidate)
+                    known_links.add(candidate[2])
+        except Exception as e:
+            if not error:error=str(e)[:120]
+
+    out=[]; seen=set()
     for title,desc,link in items:
         if link in seen:continue
         seen.add(link)
