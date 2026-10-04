@@ -56,7 +56,7 @@ def main():
     report["mercedes_glc300e_certified"]=safe("mb_certified",lambda:len(discover_glc_300e_suv(timeout=5)))
     report["mercedes_glc300e_carclasse"]=safe("carclasse",lambda:len(discover_glc_300e(timeout=7)))
 
-    for query in ("BMW iX3","BMW X1 xDrive30e SUV","Mercedes-Benz GLC 300 e SUV"):
+    for query in ("BMW Série 3 330e Touring","BMW iX3","BMW X1 xDrive30e SUV","Mercedes-Benz GLC 300 e SUV"):
         hit=safe(query,lambda q=query:search_all(q,max_per_source=3))
         if hit["ok"]:
             payload=hit["value"]
