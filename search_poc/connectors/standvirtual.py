@@ -85,40 +85,53 @@ def _route_for_query(query):
     return ""
 
 
-def discover_rows(query, limit=40, timeout=12, validate=True):
+def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3):
     route=_route_for_query(query)
     if not route:return []
-    r=requests.get(route,headers=HEADERS,timeout=timeout)
-    r.raise_for_status()
-    soup=BeautifulSoup(r.text,"html.parser")
     by_url={}
-    for a in soup.find_all("a",href=True):
-        href=a.get("href","")
-        if "/carros/anuncio/" not in href:continue
-        url=urljoin(BASE,href.split("?")[0])
-        card=_card_for_anchor(a)
-        if card is None:continue
-        text=card.get_text("\n",strip=True)
-        if not _km(text) or not _money(text):continue
-        heading=card.find(["h1","h2","h3"])
-        title=heading.get_text(" ",strip=True) if heading else a.get_text(" ",strip=True)
-        if not title or len(title)<4:
-            title=next((x.strip() for x in text.split("\n") if len(x.strip())>6),"")
-        candidate={
-            "source_key":"standvirtual","source":"Standvirtual — benchmark","official":False,
-            "title":title,"snippet":re.sub(r"\s+"," ",text)[:500],"url":url,
-            "condition":"used","availability":"","price_eur":_money(text),
-            "list_price_eur":None,"discount_eur":None,"discount_pct":None,
-            "conditional_price_eur":None,"price_condition":"",
-            "mileage_km":_km(text),"year":_year(text),"dealer":_dealer(card),
-            "discovery":"marketplace_direct",
-        }
-        if validate and not query_matches_text(query,candidate["title"],candidate["snippet"]):
-            continue
-        old=by_url.get(url)
-        if old is None or len(candidate["title"])>len(old.get("title","")):
-            by_url[url]=candidate
-        if len(by_url)>=limit:break
+    for page in range(1,max_pages+1):
+        params=None if page==1 else {"page":page}
+        try:
+            r=requests.get(route,params=params,headers=HEADERS,timeout=timeout)
+            r.raise_for_status()
+        except Exception:
+            if page==1: raise
+            break
+        soup=BeautifulSoup(r.text,"html.parser")
+        page_urls=set()
+        for a in soup.find_all("a",href=True):
+            href=a.get("href","")
+            if "/carros/anuncio/" not in href:continue
+            url=urljoin(BASE,href.split("?")[0])
+            page_urls.add(url)
+            card=_card_for_anchor(a)
+            if card is None:continue
+            text=card.get_text("\n",strip=True)
+            if not _km(text) or not _money(text):continue
+            heading=card.find(["h1","h2","h3"])
+            title=heading.get_text(" ",strip=True) if heading else a.get_text(" ",strip=True)
+            if not title or len(title)<4:
+                title=next((x.strip() for x in text.split("\n") if len(x.strip())>6),"")
+            candidate={
+                "source_key":"standvirtual","source":"Standvirtual — benchmark","official":False,
+                "title":title,"snippet":re.sub(r"\s+"," ",text)[:500],"url":url,
+                "condition":"used","availability":"","price_eur":_money(text),
+                "list_price_eur":None,"discount_eur":None,"discount_pct":None,
+                "conditional_price_eur":None,"price_condition":"",
+                "mileage_km":_km(text),"year":_year(text),"dealer":_dealer(card),
+                "discovery":"marketplace_direct",
+            }
+            if validate and not query_matches_text(query,candidate["title"],candidate["snippet"]):
+                continue
+            old=by_url.get(url)
+            if old is None or len(candidate["title"])>len(old.get("title","")):
+                by_url[url]=candidate
+            if len(by_url)>=limit:
+                return list(by_url.values())
+        # Stop if pagination loops back to a page already represented entirely
+        # by URLs we have seen; prevents needless traffic on one-page models.
+        if page>1 and page_urls and all(u in by_url for u in page_urls) and not validate:
+            break
     return list(by_url.values())
 
 
