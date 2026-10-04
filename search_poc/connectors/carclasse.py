@@ -50,13 +50,15 @@ def _parse_glc(url,timeout=6):
     soup=BeautifulSoup(r.text,"html.parser")
     text=soup.get_text("\n",strip=True)
     low=text.lower()
-    compact=re.sub(r"\s+","",low)
-    if "glc" not in low or "glc300e" not in compact:return None
-    if "glc300de" in compact:return None
 
     title_node=soup.find("h1")
     title=title_node.get_text(" ",strip=True) if title_node else "Mercedes GLC 300 e"
     title_low=title.lower()
+    title_compact=re.sub(r"[^a-z0-9]+","",title_low)
+    # Validate against the vehicle heading, not the entire page: related
+    # recommendations can legitimately contain a GLC 300 de.
+    if "glc" not in title_low or "glc300e" not in title_compact:return None
+    if "glc300de" in title_compact:return None
     body="Coupé" if "coup" in title_low else "SUV"
 
     km=re.search(r"Quilometragem\s*([\d\.\s]+)\s*Km",text,re.I)
