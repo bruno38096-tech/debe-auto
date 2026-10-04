@@ -249,6 +249,22 @@ def _detail_enrich(row, source, timeout=5):
                 except Exception: pass
             row["dealer"]="BMcar"
 
+        # Generic dealer-detail fallback: use high-value EUR amounts only.
+        # Monthly finance values are below _money_values' lower bound.
+        if not row.get("price_eur"):
+            prices=_money_values(text)
+            if prices:
+                current,list_price,disc_pct,conditional_price,price_condition=_discount(prices,text)
+                row["price_eur"]=current
+                row["list_price_eur"]=list_price
+                row["conditional_price_eur"]=conditional_price
+                row["price_condition"]=price_condition
+                row["discount_pct"]=disc_pct
+                if list_price and (conditional_price or current) and list_price>(conditional_price or current):
+                    row["discount_eur"]=round(list_price-(conditional_price or current),2)
+        if not row.get("dealer") and source.get("key") in {"carclasse","bmcar","santogal","caetano","mcoutinho","filinto"}:
+            row["dealer"]=source.get("name","")
+
         # Keep a useful concise snippet from the actual page.
         facts=[]
         if row.get("year"): facts.append(str(row["year"]))
@@ -337,7 +353,7 @@ def _sitemap_candidates(q, source, limit=3, timeout=7):
             bonus=1 if any(p in low for p in ("/veiculos/","/stock-viaturas/","/viatura/","/carro/")) else 0
             ranked.append((best,bonus,url))
     ranked.sort(key=lambda x:(x[0],x[1]),reverse=True)
-    return [(url,"","") for _,_,url in ranked[:limit]]
+    return [("", "", url) for _,_,url in ranked[:limit]]
 
 def _source_query(q, source, limit=3, timeout=8):
     domain=source["domain"]
@@ -371,6 +387,12 @@ def _source_query(q, source, limit=3, timeout=8):
             except Exception as e:
                 error=str(e)[:120]
         if len(items)>=limit: break
+
+    if not items:
+        try:
+            items.extend(_sitemap_candidates(q,source,limit=limit,timeout=timeout))
+        except Exception as e:
+            if not error:error=str(e)[:120]
 
     out=[]; seen=set()
     # Core terms ignore manufacturer filler/body terminology so that official
@@ -463,6 +485,16 @@ def _direct_specials(q):
                 d=v.to_dict(); d.update({"source_key":"bmw_caetano_new","source":"BMW / Caetano — novos em stock","official":True,"title":"BMW 330e Touring novo em stock","snippet":"Stock confirmado no portal oficial do concessionário; preço final sob proposta quando não publicado.","condition":"new_stock","dealer":"Caetano","discovery":"direct_connector"})
                 out.append(d)
         except Exception: pass
+    # BMW Premium Selection is also queried directly for BMW models outside
+    # the dedicated 330e connector. Row-level query validation rejects polluted
+    # manufacturer route/filter results (e.g. X1 xDrive25e on an xDrive30e URL).
+    if "bmw" in low and not ("330" in low and "touring" in low):
+        try:
+            from search_poc.connectors.bmw_premium_generic import discover_rows as bps_rows
+            out.extend(bps_rows(q,timeout=8))
+        except Exception:
+            pass
+
     # Standvirtual is queried directly from its public server-rendered model page.
     # This is deliberately a benchmark source, not the canonical source of truth.
     try:
