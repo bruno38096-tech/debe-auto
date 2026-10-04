@@ -91,6 +91,10 @@ def fetch_bmw_330e_touring(timeout=15):
         )
         comparison = _money(comparison_m.group(1)) if comparison_m else None
         discount = round(comparison - price, 2) if comparison and price and comparison > price else None
+        # BMW BPS sometimes shows the lower amount only with a trade-in campaign.
+        # Do not expose that as the unconditional asking price.
+        conditional = bool(discount and re.search(r"retoma|trade[- ]?in", text, re.I))
+        asking_price = comparison if conditional else price
 
         out.append(Vehicle(
             source="bmw_premium_selection",
@@ -102,7 +106,7 @@ def fetch_bmw_330e_touring(timeout=15):
             body="Touring",
             year=int(year_m.group(1)),
             mileage_km=km,
-            price_eur=price,
+            price_eur=asking_price,
             dealer=dealer,
             fuel="Híbrido Plug-In",
             power_cv=292,
@@ -111,6 +115,8 @@ def fetch_bmw_330e_touring(timeout=15):
             discount_eur=discount,
             discount_pct=round(discount / comparison * 100, 1) if discount and comparison else None,
             is_official_stock=True,
+            conditional_price_eur=price if conditional else None,
+            price_condition="retoma" if conditional else "",
         ))
 
     # Fallback for markup changes: parse the page text into vehicle blocks. This
