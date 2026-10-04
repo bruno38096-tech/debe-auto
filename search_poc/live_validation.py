@@ -6,6 +6,7 @@ from search_poc.connectors.bmcar import inventory_summary_bmw_330e_touring
 from search_poc.connectors.standvirtual import discover_bmw_330e_touring
 from search_poc.connectors.mercedes_certified import discover_glc_300e_suv
 from search_poc.connectors.carclasse import discover_glc_300e
+from search_poc.connectors.volvo_inventory import fetch_inventory
 from search_poc.beta_engine import search_all, _dedup
 
 
@@ -65,6 +66,10 @@ def main():
     report["bmw_330e_standvirtual"]=safe("standvirtual",lambda:len(discover_bmw_330e_touring(limit=30,timeout=9)))
     report["mercedes_glc300e_certified"]=safe("mb_certified",lambda:len(discover_glc_300e_suv(timeout=5)))
     report["mercedes_glc300e_carclasse"]=safe("carclasse",lambda:len(discover_glc_300e(timeout=7)))
+    report["volvo_inventory_direct"]=safe("volvo_inventory",lambda:[
+        {k:d.get(k) for k in ("source_id","url","model","variant","year","price_eur","electric_range_km","availability")}
+        for d in (v.to_dict() for v in fetch_inventory(timeout=10,limit=20))
+    ])
 
     for query in (
         "BMW Série 3 330e Touring",
