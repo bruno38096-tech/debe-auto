@@ -6,6 +6,8 @@ on:
     paths:
       - 'search_poc/**'
       - 'tests/test_search_poc.py'
+      - 'tests/test_search_integration.py'
+      - 'app.py'
       - '.github/workflows/search-poc.yml'
   workflow_dispatch:
 
@@ -22,7 +24,7 @@ jobs:
       - name: Compile Search PoC
         run: python -m compileall -q search_poc
       - name: Run Search PoC deterministic tests
-        run: python -m unittest tests.test_search_poc -v
+        run: python -m unittest tests.test_search_poc tests.test_search_integration -v
       - name: Run live multi-model source probe
         continue-on-error: true
         run: python -m search_poc.live_validation
