@@ -435,8 +435,8 @@ def _direct_specials(q):
             for v in discover_glc_300e(timeout=6):
                 d=v.to_dict(); d.update({
                     "source_key":"carclasse","source":"Carclasse","official":True,
-                    "title":"Mercedes-Benz GLC 300 e AMG Advanced 4Matic",
-                    "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · Carclasse".replace(",","."),
+                    "title":v.variant or "Mercedes-Benz GLC 300 e 4Matic",
+                    "snippet":f"{v.body or 'SUV'} · {v.year or ''} · {v.mileage_km or 0:,} km · Carclasse".replace(",","."),
                     "dealer":"Carclasse","condition":v.condition,
                     "availability":"Em stock","discovery":"direct_connector"
                 })
