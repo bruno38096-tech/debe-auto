@@ -61,6 +61,38 @@ def main():
         ]
         return {"bps":len(bps),"standvirtual":len(sv),"merged":len(merged),"duplicates":overlaps}
     report["ix3_overlap"]=safe("ix3_overlap",ix3_overlap)
+    def bmw_330e_real_overlap():
+        bps=fetch_bmw_330e_touring(timeout=12)
+        bm=inventory_summary_bmw_330e_touring(timeout=9)["vehicles"]
+        rows=[]
+        for v in bps:
+            d=v.to_dict()
+            d.update({
+                "source_key":"bmw_premium","source":"BMW Premium Selection","official":True,
+                "title":f"BMW Série 3 {v.variant} Touring","snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),
+                "dealer":v.dealer,"condition":"used_certified","discovery":"direct_connector",
+            })
+            rows.append(d)
+        for v in bm:
+            d=v.to_dict()
+            d.update({
+                "source_key":"bmcar","source":"BMcar","official":True,
+                "title":f"BMW Série 3 {v.variant}","snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · BMcar".replace(",","."),
+                "dealer":"BMcar","condition":v.condition or "used_certified","discovery":"direct_connector",
+            })
+            rows.append(d)
+        merged=_dedup(rows)
+        duplicates=[
+            {
+                "title":r.get("title"),"year":r.get("year"),"mileage_km":r.get("mileage_km"),
+                "price_eur":r.get("price_eur"),"dealer":r.get("dealer"),
+                "sources":[x.get("source_key") for x in r.get("occurrences",[])],
+                "occurrences":r.get("occurrences",[]),
+            }
+            for r in merged if len(r.get("occurrences",[]))>1
+        ]
+        return {"bps":len(bps),"bmcar":len(bm),"merged":len(merged),"duplicate_count":len(duplicates),"duplicates":duplicates}
+    report["bmw_330e_real_overlap"]=safe("bmw_330e_real_overlap",bmw_330e_real_overlap)
     report["bmw_330e_bps"]=safe("bps",lambda:len(fetch_bmw_330e_touring(timeout=12)))
     report["bmw_330e_bmcar"]=safe("bmcar",lambda:inventory_summary_bmw_330e_touring(timeout=9))
     report["bmw_330e_standvirtual"]=safe("standvirtual",lambda:len(discover_bmw_330e_touring(limit=30,timeout=9)))
