@@ -641,6 +641,16 @@ def _dedup(rows):
         out.append(r)
     return out
 
+def _complete_vehicle_row(row):
+    """Only surface records that are actionable as vehicle listings."""
+    if not row.get("year") or not row.get("price_eur"):
+        return False
+    condition=(row.get("condition") or "").lower()
+    if condition.startswith("used") and row.get("mileage_km") is None:
+        return False
+    return True
+
+
 def search_all(q, condition="all", max_per_source=3):
     q=clean(q)
     if not q:return {"query":"","results":[],"sources":[],"summary":{"total":0}}
@@ -696,25 +706,32 @@ def search_all(q, condition="all", max_per_source=3):
 
     valid_results=[]
     rejected_by_source={}
+    incomplete_by_source={}
     accepted_by_source={}
     for row in results:
         key=row.get("source_key") or "unknown"
-        if query_matches_row(q,row):
-            valid_results.append(row)
-            accepted_by_source[key]=accepted_by_source.get(key,0)+1
-        else:
+        if not query_matches_row(q,row):
             rejected_by_source[key]=rejected_by_source.get(key,0)+1
+            continue
+        if not _complete_vehicle_row(row):
+            incomplete_by_source[key]=incomplete_by_source.get(key,0)+1
+            continue
+        valid_results.append(row)
+        accepted_by_source[key]=accepted_by_source.get(key,0)+1
     results=valid_results
     for st in statuses:
         raw=int(st.get("count") or 0)
         accepted=accepted_by_source.get(st.get("key"),0)
         rejected=rejected_by_source.get(st.get("key"),0)
+        incomplete=incomplete_by_source.get(st.get("key"),0)
         st["discovered_count"]=raw
         st["accepted_count"]=accepted
         st["count"]=accepted
         if rejected:
             st["rejected_irrelevant"]=rejected
-        if raw and not accepted and rejected:
+        if incomplete:
+            st["rejected_incomplete"]=incomplete
+        if raw and not accepted and (rejected or incomplete):
             st["status"]="filtered"
 
     results=_dedup(results)
@@ -743,6 +760,7 @@ def search_all(q, condition="all", max_per_source=3):
         "sources_checked":len(selected_sources),
         "catalog_sources":len(SOURCES),
         "rejected_irrelevant":sum(rejected_by_source.values()),
+        "rejected_incomplete":sum(incomplete_by_source.values()),
     }
     payload={"query":q,"condition":condition,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {len(selected_sources)} relevantes consultadas nesta pesquisa. Conetores diretos + descoberta pública indexada; um resultado vazio não prova ausência de stock na fonte."}
     with _cache_lock:_cache[cache_key]=(now,payload)
