@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 import html, re, time, threading, requests, unicodedata
 
 from search_poc.beta_sources import SOURCES
+from search_poc.query_validation import query_matches_row
 
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
@@ -144,14 +145,27 @@ def _dealer(blob):
 
 
 def _discount(prices, blob):
-    if len(prices)<2:return (None,None,None)
+    """Normalize public-index price snippets.
+
+    A trade-in-only price is not the unconditional asking price. Keep it in a
+    separate conditional field so DEBE never presents it as cash price.
+    """
+    if not prices:
+        return (None,None,None,None,"")
+    if len(prices)==1:
+        return (prices[0],None,None,None,"")
     b=ascii_low(blob)
-    if not any(x in b for x in ("desconto","antes","pvp","pvpr","preco original","preço original","campanha")):
-        return (prices[0],None,None)
+    if not any(x in b for x in ("desconto","antes","pvp","pvpr","preco original","preço original","campanha","retoma")):
+        return (prices[0],None,None,None,"")
     hi=max(prices); lo=min(prices)
-    if hi<=lo:return (lo,None,None)
+    if hi<=lo:
+        return (lo,None,None,None,"")
     d=hi-lo
-    return (lo,hi,round(d/hi*100,1))
+    pct=round(d/hi*100,1)
+    conditional=any(x in b for x in ("retoma","trade-in","trade in"))
+    if conditional:
+        return (hi,hi,pct,lo,"retoma")
+    return (lo,hi,pct,None,"")
 
 
 def _query_aliases(q):
@@ -367,13 +381,14 @@ def _source_query(q, source, limit=3, timeout=8):
         need=1 if len(core)<=2 else max(1,len(core)-1)
         if core and hits<need:continue
         prices=_money_values(blob)
-        current,list_price,disc_pct=_discount(prices,blob)
+        current,list_price,disc_pct,conditional_price,price_condition=_discount(prices,blob)
         row={
             "source_key":source["key"],"source":source["name"],"official":source["official"],
             "title":title,"snippet":desc[:420],"url":link,
             "condition":_condition(blob,source),"availability":_availability(blob),
             "price_eur":current,"list_price_eur":list_price,
-            "discount_eur":round(list_price-current,2) if current and list_price else None,
+            "conditional_price_eur":conditional_price,"price_condition":price_condition,
+            "discount_eur":round(list_price-(conditional_price or current),2) if list_price and (conditional_price or current) and list_price>(conditional_price or current) else None,
             "discount_pct":disc_pct,"mileage_km":_km(blob),"year":_year(blob),
             "dealer":_dealer(blob),"discovery":"public_index",
         }
@@ -443,52 +458,141 @@ def _direct_specials(q):
     return out
 
 
-def _title_tokens(title):
-    stop={"bmw","mercedes","benz","audi","volvo","porsche","usado","usados","novo","nova","carro","veiculo","veículo","auto"}
-    return {x for x in re.findall(r"[a-z0-9]+",ascii_low(title or "")) if len(x)>=2 and x not in stop}
+def _identity_codes_from_row(row):
+    text=ascii_low((row.get("title") or "")+" "+(row.get("snippet") or ""))
+    text=re.sub(r"\b(\d{3})\s+(de|e|d|i)\b",r"\1\2",text)
+    codes=set(re.findall(r"\b(?:xdrive|sdrive)\s*\d{2}[a-z0-9]*\b",text))
+    codes.update(re.findall(r"\b\d{3}(?:de|e|d|i)\b",text))
+    codes.update(re.findall(r"\b(?:ix\d|x\d|glc|gle|gla|glb|eqa|eqb|eqe|eqs|a[1-8]|q[2-8]|xc\d{2}|ex\d{2}|ec\d{2}|v\d{2}|911|718)\b",text))
+    return {x.replace(" ","") for x in codes}
+
+
+def _norm_dealer(value):
+    return re.sub(r"[^a-z0-9]+"," ",ascii_low(value or "")).strip()
+
+
+def _same_dealer(a,b):
+    da,db=_norm_dealer(a.get("dealer")), _norm_dealer(b.get("dealer"))
+    if not da or not db:
+        return None
+    return da==db or da in db or db in da
+
 
 def _same_vehicle(a,b):
-    # Deduplicate only BETWEEN different sources. Two separate units in the
-    # same dealer/manufacturer inventory must remain separate even if their
-    # year, price and mileage happen to be similar.
+    # Never collapse separate rows from the same feed.
     if a.get("source_key")==b.get("source_key"):
         return False
-    # Conservative cross-source duplicate heuristic. Exact URLs are handled
-    # separately; this only merges when year, price, mileage and model tokens agree.
-    if not all(a.get(k) is not None and b.get(k) is not None for k in ("price_eur","mileage_km","year")):
+
+    # Strong identifiers, when connectors expose them.
+    av=(a.get("vin") or "").strip().upper(); bv=(b.get("vin") or "").strip().upper()
+    if av and bv:
+        return av==bv
+    ar=(a.get("stock_ref") or "").strip().lower(); br=(b.get("stock_ref") or "").strip().lower()
+    if ar and br and ar==br:
+        return True
+
+    if a.get("year") is not None and b.get("year") is not None and a.get("year")!=b.get("year"):
         return False
-    if a.get("year")!=b.get("year"): return False
-    if abs(float(a["price_eur"])-float(b["price_eur"]))>750: return False
-    if abs(int(a["mileage_km"])-int(b["mileage_km"]))>750: return False
-    ta,tb=_title_tokens(a.get("title")), _title_tokens(b.get("title"))
-    return len(ta & tb)>=2
+
+    ca,cb=_identity_codes_from_row(a),_identity_codes_from_row(b)
+    if ca and cb and not (ca & cb):
+        return False
+
+    dealer_same=_same_dealer(a,b)
+    if dealer_same is False:
+        return False
+
+    if a.get("mileage_km") is None or b.get("mileage_km") is None:
+        return False
+    km_delta=abs(int(a["mileage_km"])-int(b["mileage_km"]))
+
+    if a.get("price_eur") is None or b.get("price_eur") is None:
+        return False
+    pa,pb=float(a["price_eur"]),float(b["price_eur"])
+    price_delta=abs(pa-pb)
+    price_ratio=price_delta/max(pa,pb) if max(pa,pb)>0 else 1
+
+    # Known same seller + near-identical odometer tolerates campaign price drift.
+    if dealer_same is True and km_delta<=100 and price_ratio<=0.18 and (ca & cb):
+        return True
+
+    # If one source omits seller identity, only merge near-exact public facts.
+    if dealer_same is None and km_delta<=75 and price_delta<=300 and (ca & cb):
+        return True
+    return False
+
+
+_DEALER_SOURCE_KEYS={"bmcar","carclasse","santogal","caetano","mcoutinho","filinto"}
+
+
+def _source_priority(row):
+    key=row.get("source_key") or ""
+    if key in _DEALER_SOURCE_KEYS:
+        return 30 + (5 if row.get("discovery") in {"direct_connector","dealer_detail"} else 0)
+    if row.get("official"):
+        return 20 + (3 if row.get("discovery")=="direct_connector" else 0)
+    if key=="standvirtual":
+        return 10
+    return 5
+
+
+def _occurrence(row):
+    return {
+        "source_key":row.get("source_key"),"source":row.get("source"),
+        "url":row.get("url"),"price_eur":row.get("price_eur"),
+        "conditional_price_eur":row.get("conditional_price_eur"),
+        "list_price_eur":row.get("list_price_eur"),"price_condition":row.get("price_condition"),
+        "mileage_km":row.get("mileage_km"),"year":row.get("year"),
+        "dealer":row.get("dealer"),"discovery":row.get("discovery"),
+    }
+
+
+def _rebuild_occurrence_links(row):
+    occ=row.get("occurrences") or []
+    primary_source=row.get("source")
+    row["also_at"]=list(dict.fromkeys(x.get("source") for x in occ if x.get("source") and x.get("source")!=primary_source))
+    row["alternate_links"]=[
+        {"source":x.get("source"),"url":x.get("url")}
+        for x in occ if x.get("url") and x.get("url")!=row.get("url")
+    ]
+
 
 def _dedup(rows):
     out=[]; seen_urls=set()
-    for r in rows:
+    for incoming in rows:
+        r=dict(incoming)
         u=r.get("url") or ""
-        if u and u in seen_urls: continue
+        if u and u in seen_urls:
+            continue
+        r.setdefault("occurrences",[_occurrence(r)])
         merged=False
         for ex in out:
-            if _same_vehicle(ex,r):
-                ex.setdefault("also_at",[])
-                ex.setdefault("alternate_links",[])
-                if r.get("source") and r.get("source")!=ex.get("source") and r["source"] not in ex["also_at"]:
-                    ex["also_at"].append(r["source"])
-                if r.get("url") and r.get("source") and r.get("url")!=ex.get("url"):
-                    if not any(x.get("url")==r.get("url") for x in ex["alternate_links"]):
-                        ex["alternate_links"].append({"source":r["source"],"url":r["url"]})
-                # Prefer richer/direct data while preserving the original source link.
-                for k in ("list_price_eur","discount_eur","discount_pct","availability","dealer"):
-                    if not ex.get(k) and r.get(k): ex[k]=r[k]
-                merged=True; break
-        if merged: continue
+            if not _same_vehicle(ex,r):
+                continue
+            occurrences=list(ex.get("occurrences") or [_occurrence(ex)])
+            new_occ=_occurrence(r)
+            if not any(x.get("source_key")==new_occ.get("source_key") and x.get("url")==new_occ.get("url") for x in occurrences):
+                occurrences.append(new_occ)
+
+            if _source_priority(r)>_source_priority(ex):
+                keep_occ=occurrences
+                ex.clear(); ex.update(r)
+                ex["occurrences"]=keep_occ
+            else:
+                ex["occurrences"]=occurrences
+                for k in ("availability","dealer","conditional_price_eur","price_condition"):
+                    if not ex.get(k) and r.get(k):
+                        ex[k]=r[k]
+            _rebuild_occurrence_links(ex)
+            merged=True
+            break
+        if merged:
+            if u: seen_urls.add(u)
+            continue
         if u: seen_urls.add(u)
-        r.setdefault("also_at",[])
-        r.setdefault("alternate_links",[])
+        _rebuild_occurrence_links(r)
         out.append(r)
     return out
-
 
 def search_all(q, condition="all", max_per_source=3):
     q=clean(q)
@@ -543,6 +647,20 @@ def search_all(q, condition="all", max_per_source=3):
             row.update(meta)
             statuses.append(row)
 
+    valid_results=[]
+    rejected_by_source={}
+    for row in results:
+        if query_matches_row(q,row):
+            valid_results.append(row)
+        else:
+            key=row.get("source_key") or "unknown"
+            rejected_by_source[key]=rejected_by_source.get(key,0)+1
+    results=valid_results
+    for st in statuses:
+        rejected=rejected_by_source.get(st.get("key"),0)
+        if rejected:
+            st["rejected_irrelevant"]=rejected
+
     results=_dedup(results)
     if condition!="all":
         results=[r for r in results if r.get("condition")==condition]
@@ -568,6 +686,7 @@ def search_all(q, condition="all", max_per_source=3):
         "sources_with_hits":sum(1 for s in statuses if s["count"]>0),
         "sources_checked":len(selected_sources),
         "catalog_sources":len(SOURCES),
+        "rejected_irrelevant":sum(rejected_by_source.values()),
     }
     payload={"query":q,"condition":condition,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {len(selected_sources)} relevantes consultadas nesta pesquisa. Conetores diretos + descoberta pública indexada; um resultado vazio não prova ausência de stock na fonte."}
     with _cache_lock:_cache[cache_key]=(now,payload)
