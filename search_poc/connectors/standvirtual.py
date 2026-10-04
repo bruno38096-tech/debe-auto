@@ -85,7 +85,7 @@ def _route_for_query(query):
     return ""
 
 
-def discover_rows(query, limit=40, timeout=12):
+def discover_rows(query, limit=40, timeout=12, validate=True):
     route=_route_for_query(query)
     if not route:return []
     r=requests.get(route,headers=HEADERS,timeout=timeout)
@@ -113,7 +113,7 @@ def discover_rows(query, limit=40, timeout=12):
             "mileage_km":_km(text),"year":_year(text),"dealer":_dealer(card),
             "discovery":"marketplace_direct",
         }
-        if not query_matches_text(query,candidate["title"],candidate["snippet"]):
+        if validate and not query_matches_text(query,candidate["title"],candidate["snippet"]):
             continue
         old=by_url.get(url)
         if old is None or len(candidate["title"])>len(old.get("title","")):
