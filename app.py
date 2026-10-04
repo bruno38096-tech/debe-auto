@@ -5,8 +5,10 @@ from urllib.parse import quote_plus, urljoin, urlparse, parse_qs, unquote
 from datetime import datetime
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from search_poc.integration import bp as search_beta_bp, search_beta_enabled
 
 app = Flask(__name__, static_folder='.')
+app.register_blueprint(search_beta_bp)
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36','Accept-Language':'pt-PT,pt;q=0.9,en;q=0.8'}
 
 def clean(s): return re.sub(r'\s+',' ',htmllib.unescape(s or '')).strip()
@@ -409,6 +411,11 @@ def home():
     page=Path(__file__).with_name('index.html').read_text(encoding='utf-8')
     frontend='<script src="/debe_frontend_v3.js"></script>'
     if frontend not in page:page=page.replace('</body>',frontend+'</body>')
+    if search_beta_enabled():
+        search_link='<a class="cta" href="/search-beta/">Pesquisar carros <span style="opacity:.72">Beta</span></a>'
+        marker='<a class="cta" href="#start">Começar agora</a>'
+        if search_link not in page and marker in page:
+            page=page.replace(marker,search_link+marker)
     return Response(page,mimetype='text/html')
 @app.route('/debe_frontend_v3.js')
 def frontend_v3():return Response(Path(__file__).with_name('debe_frontend_v3.js').read_text(encoding='utf-8'),mimetype='application/javascript')
