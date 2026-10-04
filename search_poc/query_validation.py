@@ -19,6 +19,10 @@ def _compact(s):
     s=_ascii(s)
     s=re.sub(r"\b(\d{3})\s+(de|e|d|i)\b", r"\1\2", s)
     s=re.sub(r"\b([xs])drive\s+(\d{2}[a-z0-9]+)\b", r"\1drive\2", s)
+    # Marketplace titles often split Volvo model codes ("XC 60") even when
+    # the catalogue/query uses "XC60". Normalize before identity matching.
+    s=re.sub(r"\b(xc|ex|ec)\s+(\d{2})\b", r"\1\2", s)
+    s=re.sub(r"\b(ix|x)\s+(\d)\b", r"\1\2", s)
     return re.sub(r"[^a-z0-9]+"," ",s).strip()
 
 
@@ -27,7 +31,22 @@ def identity_codes(text):
     codes=set()
     codes.update(re.findall(r"\b(?:xdrive|sdrive)\d{2}[a-z0-9]*\b",t))
     codes.update(re.findall(r"\b\d{3}(?:de|e|d|i)\b",t))
-    codes.update(re.findall(r"\b(?:ix\d|x\d|glc|gle|gla|glb|eqa|eqb|eqe|eqs|a[1-8]|q[2-8]|xc\d{2}|ex\d{2}|ec\d{2}|v\d{2}|911|718)\b",t))
+
+    # Audi engine badges are variant-defining (40 TDI != 35 TDI).
+    codes.update(x.replace(" ","") for x in re.findall(
+        r"\b(?:25|30|35|40|45|50|55|60)\s+(?:tfsi(?:\s+e)?|tdi)\b", t
+    ))
+
+    # Volvo powertrain badges are mutually exclusive in exact variant searches.
+    codes.update(re.findall(r"\b(?:b[3-6]|t[4-8])\b",t))
+
+    # Lexus/Toyota-style hybrid badges (350h, 450h+) are normalized to 350h/450h.
+    codes.update(re.findall(r"\b\d{3}h\b",t))
+
+    codes.update(re.findall(
+        r"\b(?:ix\d|x\d|glc|gle|gla|glb|eqa|eqb|eqe|eqs|a[1-8]|q[2-8]|xc\d{2}|ex\d{2}|ec\d{2}|v\d{2}|911|718)\b",
+        t,
+    ))
     return codes
 
 
@@ -36,6 +55,12 @@ def _code_family(code):
         return "drive"
     if re.fullmatch(r"\d{3}(?:de|e|d|i)",code):
         return "engine"
+    if re.fullmatch(r"(?:25|30|35|40|45|50|55|60)(?:tfsi(?:e)?|tdi)",code):
+        return "engine"
+    if re.fullmatch(r"\d{3}h",code):
+        return "engine"
+    if re.fullmatch(r"(?:b[3-6]|t[4-8])",code):
+        return "powertrain"
     return "model"
 
 
