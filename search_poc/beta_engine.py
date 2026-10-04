@@ -69,6 +69,14 @@ def _relevant_sources(q):
     return [s for s in SOURCES if s["key"] in generic]
 
 
+def _xml_soup(text):
+    """Parse simple RSS/sitemap XML without requiring lxml in clean CI/runtime images."""
+    try:
+        return BeautifulSoup(text, "xml")
+    except Exception:
+        return BeautifulSoup(text, "html.parser")
+
+
 def clean(s):
     return re.sub(r"\s+"," ",html.unescape(s or "")).strip()
 
@@ -272,7 +280,7 @@ def _sitemap_urls(source, timeout=7):
         try:
             r=requests.get(root,headers=HEADERS,timeout=timeout)
             if r.status_code>=400: continue
-            soup=BeautifulSoup(r.text,"xml")
+            soup=_xml_soup(r.text)
             locs=[clean(x.get_text(strip=True)) for x in soup.find_all("loc")]
             if not locs: continue
             if soup.find("sitemapindex"):
@@ -288,7 +296,7 @@ def _sitemap_urls(source, timeout=7):
         try:
             r=requests.get(child,headers=HEADERS,timeout=timeout)
             if r.status_code>=400: continue
-            soup=BeautifulSoup(r.text,"xml")
+            soup=_xml_soup(r.text)
             collected.extend(clean(x.get_text(strip=True)) for x in soup.find_all("loc"))
         except Exception:
             continue
@@ -344,7 +352,7 @@ def _source_query(q, source, limit=3, timeout=8):
                 r=requests.get(u,headers=HEADERS,timeout=timeout)
                 r.raise_for_status()
                 if idx==0 and "<item" in r.text.lower():
-                    soup=BeautifulSoup(r.text,"xml")
+                    soup=_xml_soup(r.text)
                     for item in soup.find_all("item"):
                         title=clean(item.title.get_text(" ",strip=True) if item.title else "")
                         link=clean(item.link.get_text(strip=True) if item.link else "")
