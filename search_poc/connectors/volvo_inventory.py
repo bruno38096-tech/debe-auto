@@ -8,7 +8,7 @@ from search_poc.models import Vehicle
 URL="https://www.volvocars.com/pt/inventory/"
 BASE="https://www.volvocars.com"
 HEADERS={
-    "User-Agent":"Mozilla/5.0 (compatible; DEBE-Search-PoC/0.2)",
+    "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
     "Accept-Language":"pt-PT,pt;q=0.9",
 }
 
