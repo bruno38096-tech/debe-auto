@@ -499,7 +499,7 @@ def _direct_specials(q):
     # This is deliberately a benchmark source, not the canonical source of truth.
     try:
         from search_poc.connectors.standvirtual import discover_rows
-        out.extend(discover_rows(q,limit=40,timeout=8))
+        out.extend(discover_rows(q,limit=120,timeout=8))
     except Exception:
         pass
     return out
@@ -696,17 +696,26 @@ def search_all(q, condition="all", max_per_source=3):
 
     valid_results=[]
     rejected_by_source={}
+    accepted_by_source={}
     for row in results:
+        key=row.get("source_key") or "unknown"
         if query_matches_row(q,row):
             valid_results.append(row)
+            accepted_by_source[key]=accepted_by_source.get(key,0)+1
         else:
-            key=row.get("source_key") or "unknown"
             rejected_by_source[key]=rejected_by_source.get(key,0)+1
     results=valid_results
     for st in statuses:
+        raw=int(st.get("count") or 0)
+        accepted=accepted_by_source.get(st.get("key"),0)
         rejected=rejected_by_source.get(st.get("key"),0)
+        st["discovered_count"]=raw
+        st["accepted_count"]=accepted
+        st["count"]=accepted
         if rejected:
             st["rejected_irrelevant"]=rejected
+        if raw and not accepted and rejected:
+            st["status"]="filtered"
 
     results=_dedup(results)
     if condition!="all":
@@ -730,7 +739,7 @@ def search_all(q, condition="all", max_per_source=3):
         "used_certified":sum(1 for r in results if r.get("condition")=="used_certified"),
         "used":sum(1 for r in results if r.get("condition")=="used"),
         "explicit_discount":sum(1 for r in results if r.get("discount_pct")),
-        "sources_with_hits":sum(1 for s in statuses if s["count"]>0),
+        "sources_with_hits":sum(1 for s in statuses if int(s.get("accepted_count",s.get("count") or 0))>0),
         "sources_checked":len(selected_sources),
         "catalog_sources":len(SOURCES),
         "rejected_irrelevant":sum(rejected_by_source.values()),
