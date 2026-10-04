@@ -23,3 +23,6 @@ jobs:
         run: python -m compileall -q search_poc
       - name: Run Search PoC deterministic tests
         run: python -m unittest tests.test_search_poc -v
+      - name: Run live multi-model source probe
+        continue-on-error: true
+        run: python -m search_poc.live_validation
