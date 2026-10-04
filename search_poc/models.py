@@ -27,17 +27,23 @@ class Vehicle:
     power_cv: Optional[int] = None
     co2_g_km: Optional[float] = None
     electric_range_km: Optional[float] = None
-    # Inventory classification is critical for fair comparisons.
-    condition: str = "used"  # new_stock | demo_service | km0 | used_certified | used
+    condition: str = "used"
     availability: str = ""
     list_price_eur: Optional[float] = None
     discount_eur: Optional[float] = None
     discount_pct: Optional[float] = None
     is_official_stock: bool = False
+    vin: str = ""
+    stock_ref: str = ""
+    observed_at: str = ""
+    conditional_price_eur: Optional[float] = None
+    price_condition: str = ""
 
     @property
     def fingerprint(self) -> str:
-        # VIN is preferable when available later. For the PoC, use stable public facts.
+        strong = _norm(self.vin) or _norm(self.stock_ref)
+        if strong:
+            return hashlib.sha1((self.source + "|" + strong).encode()).hexdigest()[:16]
         parts = [
             _norm(self.make), _norm(self.model), _norm(self.variant), _norm(self.body),
             str(self.year or ""), str(self.mileage_km or ""), str(round(self.price_eur or 0)),
