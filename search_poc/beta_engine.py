@@ -24,7 +24,7 @@ _sitemap_lock=threading.Lock()
 SITEMAP_TTL=3600
 
 # Brand-specific routing keeps searches fast while retaining national dealer coverage.
-COMMON_KEYS={"carclasse","santogal","caetano","bmcar","mcoutinho","filinto","standvirtual"}
+COMMON_KEYS={"carclasse","santogal","caetano","bmcar","mcoutinho","filinto","standvirtual","piscapisca"}
 BRAND_KEYS={
     "bmw":{"bmw_new","bmw_premium","bmw_caetano_new"},
     "mercedes":{"mercedes_new","mercedes_certified"},
@@ -210,7 +210,7 @@ def _condition_from_detail(text, source):
 
 def _detail_enrich(row, source, timeout=5):
     """Read dealer detail pages so results do not depend only on search snippets."""
-    if source.get("key") not in {"carclasse","bmcar","santogal","caetano","mcoutinho","filinto"}:
+    if source.get("key") not in {"carclasse","bmcar","santogal","caetano","mcoutinho","filinto","piscapisca"}:
         return row
     try:
         r=requests.get(row["url"],headers=HEADERS,timeout=timeout)
@@ -230,7 +230,24 @@ def _detail_enrich(row, source, timeout=5):
         if yr is not None: row["year"]=yr
         row["condition"]=_condition_from_detail(text,source)
 
-        if source.get("key")=="carclasse":
+        if source.get("key")=="piscapisca":
+            # PiscaPisca detail pages expose canonical asking price, vehicle
+            # registration year and odometer explicitly. Parse labelled fields
+            # so the advertisement publication date is never mistaken for the
+            # vehicle year.
+            pm=re.search(r"Pre[cç]o de venda:\s*([\d\.\s\xa0]+)\s*€",text,re.I)
+            km_m=re.search(r"\bKms\s*([\d\.\s\xa0]+)\s*km\b",text,re.I)
+            yr_m=re.search(r"\bAno\s*(20\d{2})\b",text,re.I)
+            if pm:
+                p=float(re.sub(r"\D","",pm.group(1)))
+                if p: row["price_eur"]=p
+            if km_m:
+                row["mileage_km"]=int(re.sub(r"\D","",km_m.group(1)))
+            if yr_m:
+                row["year"]=int(yr_m.group(1))
+            row["condition"]="used"
+
+        elif source.get("key")=="carclasse":
             p=re.search(r"P\.V\.P\.\s*([\d\.\s]+)\s*(?:EUR|€)",text,re.I)
             newp=re.search(r"Pre[cç]o\s+em\s+novo\s*([\d\.\s]+)\s*(?:EUR|€)",text,re.I)
             current=float(re.sub(r"\D","",p.group(1))) if p else None
