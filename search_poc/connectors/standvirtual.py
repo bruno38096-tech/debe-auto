@@ -16,6 +16,13 @@ HEADERS = {
 }
 
 
+def _xml_soup(text):
+    try:
+        return BeautifulSoup(text, "xml")
+    except Exception:
+        return BeautifulSoup(text, "html.parser")
+
+
 def _eur(text):
     if not text:
         return None
@@ -47,7 +54,7 @@ def discover_bmw_330e_touring(limit=40, timeout=12):
     rss = "https://www.bing.com/search?format=rss&cc=pt&setlang=pt-pt&q=" + quote_plus(q)
     r = requests.get(rss, headers=HEADERS, timeout=timeout)
     r.raise_for_status()
-    soup = BeautifulSoup(r.text, "xml")
+    soup = _xml_soup(r.text)
     urls = []
     for item in soup.find_all("item"):
         link = item.link.get_text(strip=True) if item.link else ""
