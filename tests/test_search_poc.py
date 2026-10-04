@@ -4,6 +4,7 @@ from search_poc.models import Vehicle
 from search_poc.dedup import match_vehicle, cross_source_matches
 from search_poc.query_validation import query_matches_text
 from search_poc.beta_engine import _dedup, _discount
+from search_poc.connectors.standvirtual import _route_for_query
 
 
 class SearchPocQueryValidationTests(unittest.TestCase):
@@ -42,6 +43,48 @@ class SearchPocQueryValidationTests(unittest.TestCase):
             "BMW 330 e Pack M",
             "Carrinha · 2023",
         ))
+
+    def test_glc_exact_engine_without_body_label_is_accepted(self):
+        self.assertTrue(query_matches_text(
+            "Mercedes-Benz GLC 300 e SUV",
+            "Mercedes-Benz GLC 300 e 4Matic",
+            "Híbrido Plug-In · 2022 · 74 500 km",
+        ))
+
+    def test_audi_engine_badge_is_variant_defining(self):
+        self.assertFalse(query_matches_text(
+            "Audi A4 40 TDI Avant",
+            "Audi A4 Avant 35 TDI S tronic",
+            "Diesel · 2022",
+        ))
+        self.assertTrue(query_matches_text(
+            "Audi A4 40 TDI Avant",
+            "Audi A4 Avant 40 TDI S tronic advanced",
+            "Diesel · 2022",
+        ))
+
+    def test_volvo_split_model_and_powertrain_are_normalized(self):
+        self.assertFalse(query_matches_text(
+            "Volvo XC60 T6 SUV",
+            "Volvo XC 60 2.0 T8 PHEV Inscription AWD",
+            "Híbrido Plug-In · 2022",
+        ))
+        self.assertTrue(query_matches_text(
+            "Volvo XC60 T6 SUV",
+            "Volvo XC 60 2.0 T6 PHEV Plus Dark AWD",
+            "Híbrido Plug-In · 2025",
+        ))
+
+
+class SearchPocMarketplaceRouteTests(unittest.TestCase):
+    def test_glc_300_uses_narrow_route(self):
+        self.assertIn("/glc-300", _route_for_query("Mercedes-Benz GLC 300 e SUV"))
+
+    def test_a4_station_uses_avant_route(self):
+        self.assertTrue(_route_for_query("Audi A4 40 TDI Avant").endswith("/a4-avant"))
+
+    def test_volvo_uses_hyphenated_model_slug(self):
+        self.assertTrue(_route_for_query("Volvo XC60 T6 SUV").endswith("/xc-60"))
 
 
 class SearchPocPriceTests(unittest.TestCase):
