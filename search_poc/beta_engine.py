@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 import html, re, time, threading, requests, unicodedata
 
 from search_poc.beta_sources import SOURCES
-from search_poc.query_validation import query_matches_row
+from search_poc.query_validation import query_matches_row, identity_codes
 
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
@@ -536,12 +536,8 @@ def _direct_specials(q):
 
 
 def _identity_codes_from_row(row):
-    text=ascii_low((row.get("title") or "")+" "+(row.get("snippet") or ""))
-    text=re.sub(r"\b(\d{3})\s+(de|e|d|i)\b",r"\1\2",text)
-    codes=set(re.findall(r"\b(?:xdrive|sdrive)\s*\d{2}[a-z0-9]*\b",text))
-    codes.update(re.findall(r"\b\d{3}(?:de|e|d|i)\b",text))
-    codes.update(re.findall(r"\b(?:ix\d|x\d|glc|gle|gla|glb|eqa|eqb|eqe|eqs|a[1-8]|q[2-8]|xc\d{2}|ex\d{2}|ec\d{2}|v\d{2}|911|718)\b",text))
-    return {x.replace(" ","") for x in codes}
+    text=(row.get("title") or "")+" "+(row.get("snippet") or "")
+    return identity_codes(text)
 
 
 def _norm_dealer(value):
