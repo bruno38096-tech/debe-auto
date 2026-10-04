@@ -1,0 +1,87 @@
+name: DEBE Search PoC final audit
+
+on:
+  push:
+    branches: [debe-search-poc]
+    paths:
+      - 'search_poc/**'
+      - 'tests/test_search_poc.py'
+      - '.github/workflows/search-poc-final-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Deterministic regression suite
+        run: python -m unittest tests.test_search_poc -v
+      - name: Live representative-source audit
+        run: |
+          python - <<'PY'
+          import json
+          from search_poc.connectors.bmw_premium import fetch_bmw_330e_touring
+          from search_poc.connectors.bmcar import inventory_summary_bmw_330e_touring
+          from search_poc.connectors.bmw_premium_generic import discover_rows as bps_rows
+          from search_poc.connectors.standvirtual import discover_rows as sv_rows
+          from search_poc.query_validation import query_matches_row
+          from search_poc.beta_engine import _dedup
+
+          report={}
+
+          # 1) BMW 330e Touring: official aggregator vs dealer direct + real dedup.
+          bps=fetch_bmw_330e_touring(timeout=12)
+          bm=inventory_summary_bmw_330e_touring(timeout=10)["vehicles"]
+          rows=[]
+          for v in bps:
+              d=v.to_dict()
+              d.update({"source_key":"bmw_premium","source":"BMW Premium Selection","official":True,
+                        "title":f"BMW Série 3 {v.variant} Touring",
+                        "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),
+                        "dealer":v.dealer,"condition":"used_certified","discovery":"direct_connector"})
+              rows.append(d)
+          for v in bm:
+              d=v.to_dict()
+              d.update({"source_key":"bmcar","source":"BMcar","official":True,
+                        "title":f"BMW Série 3 {v.variant}",
+                        "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · BMcar".replace(",","."),
+                        "dealer":"BMcar","condition":v.condition or "used_certified","discovery":"direct_connector"})
+              rows.append(d)
+          merged=_dedup(rows)
+          dup=[r for r in merged if len(r.get("occurrences",[]))>1]
+          report["bmw_330e"]={"bps":len(bps),"bmcar":len(bm),"unique":len(merged),"duplicates":len(dup)}
+          assert bps and bm and dup
+
+          # 2) BMW iX3: official certified + marketplace both live.
+          ix3_bps=bps_rows("BMW iX3",timeout=10)
+          ix3_sv=sv_rows("BMW iX3",limit=80,timeout=10)
+          ix3_sv_valid=[r for r in ix3_sv if query_matches_row("BMW iX3",r)]
+          report["bmw_ix3"]={"bps":len(ix3_bps),"standvirtual_raw":len(ix3_sv),"standvirtual_valid":len(ix3_sv_valid)}
+          assert ix3_bps and ix3_sv_valid
+
+          # 3) Mercedes GLC 300e: marketplace route may contain promoted noise;
+          # semantic validator must keep 300e and reject 300de/other Mercedes.
+          glc=sv_rows("Mercedes-Benz GLC 300 e SUV",limit=120,timeout=10)
+          glc_valid=[r for r in glc if query_matches_row("Mercedes-Benz GLC 300 e SUV",r)]
+          glc_wrong=[r for r in glc if "300 de" in ((r.get("title") or "").lower())]
+          assert all(not query_matches_row("Mercedes-Benz GLC 300 e SUV",r) for r in glc_wrong)
+          report["mercedes_glc300e"]={"raw":len(glc),"valid":len(glc_valid),"wrong_300de_seen":len(glc_wrong)}
+          assert glc_valid
+
+          # 4) BMW X1 xDrive30e: current source pages may contain xDrive25e.
+          # Zero valid stock is acceptable; accepting xDrive25e is not.
+          x1_bps=bps_rows("BMW X1 xDrive30e SUV",timeout=10)
+          x1_sv=sv_rows("BMW X1 xDrive30e SUV",limit=120,timeout=10)
+          x1_all=x1_bps+x1_sv
+          x1_valid=[r for r in x1_all if query_matches_row("BMW X1 xDrive30e SUV",r)]
+          x1_25e=[r for r in x1_all if "25e" in ((r.get("title") or "")+(r.get("snippet") or "")).lower().replace(" ","")]
+          assert all(not query_matches_row("BMW X1 xDrive30e SUV",r) for r in x1_25e)
+          report["bmw_x1_xdrive30e"]={"raw":len(x1_all),"valid":len(x1_valid),"wrong_25e_rejected":len(x1_25e)}
+
+          print(json.dumps(report,ensure_ascii=False,indent=2))
+          PY
