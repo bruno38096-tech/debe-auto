@@ -6,7 +6,7 @@ from search_poc.connectors.bmcar import inventory_summary_bmw_330e_touring
 from search_poc.connectors.standvirtual import discover_bmw_330e_touring
 from search_poc.connectors.mercedes_certified import discover_glc_300e_suv
 from search_poc.connectors.carclasse import discover_glc_300e
-from search_poc.beta_engine import search_all
+from search_poc.beta_engine import search_all, _dedup
 
 
 def safe(name, fn):
