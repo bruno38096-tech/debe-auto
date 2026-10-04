@@ -1,0 +1,25 @@
+name: DEBE Search PoC tests
+
+on:
+  push:
+    branches: [debe-search-poc]
+    paths:
+      - 'search_poc/**'
+      - 'tests/test_search_poc.py'
+      - '.github/workflows/search-poc.yml'
+  workflow_dispatch:
+
+jobs:
+  search-poc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile Search PoC
+        run: python -m compileall -q search_poc
+      - name: Run Search PoC deterministic tests
+        run: python -m unittest tests.test_search_poc -v
