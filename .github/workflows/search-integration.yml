@@ -1,0 +1,27 @@
+name: DEBE Search integration gate
+
+on:
+  push:
+    branches: [debe-search-poc]
+    paths:
+      - 'app.py'
+      - 'search_poc/integration.py'
+      - 'search_beta_app.py'
+      - 'tests/test_search_integration.py'
+      - '.github/workflows/search-integration.yml'
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile integration
+        run: python -m py_compile app.py search_poc/integration.py search_beta_app.py
+      - name: Feature flag and route tests
+        run: python -m unittest tests.test_search_integration -v
