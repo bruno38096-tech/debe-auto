@@ -38,6 +38,18 @@ def main():
         "bps_ix3": bps_generic_rows("BMW iX3",timeout=10),
         "bps_x1": bps_generic_rows("BMW X1 xDrive30e SUV",timeout=10),
     })
+    def ix3_overlap():
+        sv=sv_rows("BMW iX3",limit=120,timeout=10)
+        bps=bps_generic_rows("BMW iX3",timeout=10)
+        merged=_dedup(bps+sv)
+        overlaps=[
+            {"title":r.get("title"),"year":r.get("year"),"mileage_km":r.get("mileage_km"),
+             "price_eur":r.get("price_eur"),"dealer":r.get("dealer"),
+             "sources":[x.get("source_key") for x in r.get("occurrences",[])]}
+            for r in merged if len(r.get("occurrences",[]))>1
+        ]
+        return {"bps":len(bps),"standvirtual":len(sv),"merged":len(merged),"duplicates":overlaps}
+    report["ix3_overlap"]=safe("ix3_overlap",ix3_overlap)
     report["bmw_330e_bps"]=safe("bps",lambda:len(fetch_bmw_330e_touring(timeout=12)))
     report["bmw_330e_bmcar"]=safe("bmcar",lambda:inventory_summary_bmw_330e_touring(timeout=9))
     report["bmw_330e_standvirtual"]=safe("standvirtual",lambda:len(discover_bmw_330e_touring(limit=30,timeout=9)))
