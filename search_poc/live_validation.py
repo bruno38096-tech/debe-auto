@@ -28,7 +28,9 @@ def main():
     report["standvirtual_raw_pages"]=safe("standvirtual_raw",lambda:{
         "ix3":raw_page("https://www.standvirtual.com/carros/bmw/ix3","ix3"),
         "x1":raw_page("https://www.standvirtual.com/carros/bmw/x1","xdrive30e"),
-        "glc":raw_page("https://www.standvirtual.com/carros/mercedes-benz/glc","300 e"),
+        "glc":raw_page("https://www.standvirtual.com/carros/mercedes-benz/glc-300?search%5Bfilter_enum_engine_code%5D=classe-glc","300 e"),
+        "a4":raw_page("https://www.standvirtual.com/carros/audi/a4-avant","40 tdi"),
+        "xc60":raw_page("https://www.standvirtual.com/carros/volvo/xc-60","t6"),
     })
     from search_poc.connectors.standvirtual import discover_rows as sv_rows
     from search_poc.connectors.bmw_premium_generic import discover_rows as bps_generic_rows
@@ -41,6 +43,8 @@ def main():
     report["diagnostic_samples"]=safe("samples",lambda:{
         "glc": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("Mercedes-Benz GLC 300 e SUV",limit=12,timeout=10)],
         "x1": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("BMW X1 xDrive30e SUV",limit=12,timeout=10)],
+        "a4": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("Audi A4 40 TDI Avant",limit=12,timeout=10)],
+        "xc60": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("Volvo XC60 T6 SUV",limit=12,timeout=10)],
         "bps_ix3": bps_generic_rows("BMW iX3",timeout=10),
         "bps_x1": bps_generic_rows("BMW X1 xDrive30e SUV",timeout=10),
     })
@@ -62,7 +66,14 @@ def main():
     report["mercedes_glc300e_certified"]=safe("mb_certified",lambda:len(discover_glc_300e_suv(timeout=5)))
     report["mercedes_glc300e_carclasse"]=safe("carclasse",lambda:len(discover_glc_300e(timeout=7)))
 
-    for query in ("BMW Série 3 330e Touring","BMW iX3","BMW X1 xDrive30e SUV","Mercedes-Benz GLC 300 e SUV"):
+    for query in (
+        "BMW Série 3 330e Touring",
+        "BMW iX3",
+        "BMW X1 xDrive30e SUV",
+        "Mercedes-Benz GLC 300 e SUV",
+        "Audi A4 40 TDI Avant",
+        "Volvo XC60 T6 SUV",
+    ):
         hit=safe(query,lambda q=query:search_all(q,max_per_source=3))
         if hit["ok"]:
             payload=hit["value"]
