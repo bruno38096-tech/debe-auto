@@ -5,6 +5,7 @@ from search_poc.dedup import match_vehicle, cross_source_matches
 from search_poc.query_validation import query_matches_text
 from search_poc.beta_engine import _dedup, _discount
 from search_poc.connectors.standvirtual import _route_for_query
+from search_poc.connectors.piscapisca import _route_for_query as _pisca_route, _parse_listing_html as _pisca_parse
 from search_poc.connectors.volvo_inventory import _parse_inventory_html
 
 
@@ -86,6 +87,39 @@ class SearchPocMarketplaceRouteTests(unittest.TestCase):
 
     def test_volvo_uses_hyphenated_model_slug(self):
         self.assertTrue(_route_for_query("Volvo XC60 T6 SUV").endswith("/xc-60"))
+
+
+
+
+class SearchPocPiscaPiscaTests(unittest.TestCase):
+    def test_routes_are_model_specific(self):
+        self.assertTrue(_pisca_route("Audi A4 40 TDI Avant").endswith("/carros/audi/a4-avant"))
+        self.assertTrue(_pisca_route("Volvo XC60 T6 SUV").endswith("/carros/volvo/xc60"))
+        self.assertTrue(_pisca_route("BMW iX3").endswith("/carros/bmw/ix3"))
+        self.assertTrue(_pisca_route("Mercedes-Benz GLC 300 e SUV").endswith("/carros/mercedes-benz/glc"))
+
+    def test_listing_parser_keeps_only_exact_variant(self):
+        html = """
+        <div class="card">
+          <a href="/carros/usados/audi-a4-avant-diesel/good1">
+            Audi A4 Avant 40 TDI S line S tronic 162 495 km • Automática • Diesel • 2020 Croca
+          </a>
+          <span>32 950 €</span>
+        </div>
+        <div class="card">
+          <a href="/carros/usados/audi-a4-avant-diesel/bad1">
+            Audi A4 Avant 35 TDI S tronic 124 708 km • Automática • Diesel • 2022 Aveiro
+          </a>
+          <span>25 450 €</span>
+        </div>
+        """
+        rows=_pisca_parse(html,"Audi A4 40 TDI Avant")
+        self.assertEqual(1,len(rows))
+        self.assertEqual(32950.0,rows[0]["price_eur"])
+        self.assertEqual(162495,rows[0]["mileage_km"])
+        self.assertEqual(2020,rows[0]["year"])
+        self.assertIn("40 TDI",rows[0]["title"])
+
 
 
 
