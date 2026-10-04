@@ -388,11 +388,18 @@ def _source_query(q, source, limit=3, timeout=8):
                 error=str(e)[:120]
         if len(items)>=limit: break
 
-    if not items:
-        try:
-            items.extend(_sitemap_candidates(q,source,limit=limit,timeout=timeout))
-        except Exception as e:
-            if not error:error=str(e)[:120]
+    # Always supplement dealer discovery with sitemap candidates. Search-engine
+    # results can be non-empty yet generic/irrelevant; the previous "only if no
+    # items" fallback silently skipped exact stock URLs in that case.
+    try:
+        sitemap_items=_sitemap_candidates(q,source,limit=max(limit*2,6),timeout=timeout)
+        known_links={x[2] for x in items if len(x)>=3}
+        for candidate in sitemap_items:
+            if candidate[2] not in known_links:
+                items.append(candidate)
+                known_links.add(candidate[2])
+    except Exception as e:
+        if not error:error=str(e)[:120]
 
     out=[]; seen=set()
     # Core terms ignore manufacturer filler/body terminology so that official
