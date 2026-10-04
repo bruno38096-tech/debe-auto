@@ -62,7 +62,7 @@ def query_matches_text(query, title="", snippet=""):
             return False
 
     for expected in qcodes:
-        if _code_family(expected) in {"drive","engine"} and expected not in ccodes:
+        if _code_family(expected) in {"drive","engine","powertrain"} and expected not in ccodes:
             return False
 
     qmodels={x for x in qcodes if _code_family(x)=="model"}
