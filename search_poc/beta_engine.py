@@ -463,6 +463,13 @@ def _direct_specials(q):
                 d=v.to_dict(); d.update({"source_key":"bmw_caetano_new","source":"BMW / Caetano — novos em stock","official":True,"title":"BMW 330e Touring novo em stock","snippet":"Stock confirmado no portal oficial do concessionário; preço final sob proposta quando não publicado.","condition":"new_stock","dealer":"Caetano","discovery":"direct_connector"})
                 out.append(d)
         except Exception: pass
+    # Standvirtual is queried directly from its public server-rendered model page.
+    # This is deliberately a benchmark source, not the canonical source of truth.
+    try:
+        from search_poc.connectors.standvirtual import discover_rows
+        out.extend(discover_rows(q,limit=40,timeout=8))
+    except Exception:
+        pass
     return out
 
 
