@@ -20,6 +20,16 @@ def safe(name, fn):
 
 def main():
     report={}
+    def raw_page(url, needle):
+        import requests
+        r=requests.get(url,headers={"User-Agent":"Mozilla/5.0","Accept-Language":"pt-PT,pt;q=0.9"},timeout=10)
+        low=r.text.lower()
+        return {"status":r.status_code,"length":len(r.text),"needle":needle.lower() in low,"listing_links":low.count("/carros/anuncio/"),"url":r.url}
+    report["standvirtual_raw_pages"]=safe("standvirtual_raw",lambda:{
+        "ix3":raw_page("https://www.standvirtual.com/carros/bmw/ix3","ix3"),
+        "x1":raw_page("https://www.standvirtual.com/carros/bmw/x1","xdrive30e"),
+        "glc":raw_page("https://www.standvirtual.com/carros/mercedes-benz/glc","300 e"),
+    })
     report["bmw_330e_bps"]=safe("bps",lambda:len(fetch_bmw_330e_touring(timeout=12)))
     report["bmw_330e_bmcar"]=safe("bmcar",lambda:inventory_summary_bmw_330e_touring(timeout=9))
     report["bmw_330e_standvirtual"]=safe("standvirtual",lambda:len(discover_bmw_330e_touring(limit=30,timeout=9)))
