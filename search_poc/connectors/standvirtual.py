@@ -17,8 +17,9 @@ HEADERS={
 
 
 def _money(text):
-    m=re.search(r"(\d{1,3}(?:[ .]\d{3})+)\s*(?:EUR|€)",text or "",re.I)
-    return float(re.sub(r"\D","",m.group(1))) if m else None
+    vals=[float(re.sub(r"\D","",x)) for x in re.findall(r"(\d{1,3}(?:[ .]\d{3})+)\s*(?:EUR|€)",text or "",re.I)]
+    vals=[x for x in vals if x>=3000]
+    return vals[-1] if vals else None
 
 
 def _km(text):
@@ -27,7 +28,7 @@ def _km(text):
 
 
 def _year(text):
-    years=[int(x) for x in re.findall(r"\b(20(?:1\d|2\d))\b",text or "")]
+    years=[int(x) for x in re.findall(r"\b(20(?:0\d|1\d|2\d))\b",text or "")]
     return years[0] if years else None
 
 
@@ -42,7 +43,7 @@ def _dealer(card):
         if line.lower() in {"ver anúncios","ver anuncios"}:
             for nxt in lines[i+1:i+4]:
                 low=nxt.lower()
-                if not any(x in low for x in ("financiamento","lavagem","entrega","oficina","publicado","para o topo")):
+                if not any(x in low for x in ("financiamento","lavagem","entrega","oficina","publicado","para o topo","ad link")):
                     return nxt.lstrip("* ").strip()
     return ""
 
