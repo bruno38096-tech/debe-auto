@@ -2,6 +2,7 @@
 import re
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 BASE="https://bmwpremiumselection.bmw.pt"
 HEADERS={"User-Agent":"Mozilla/5.0 (compatible; DEBE-Search-PoC/0.8)","Accept-Language":"pt-PT,pt;q=0.9"}
@@ -36,11 +37,31 @@ def discover_rows(query,timeout=10):
     if not url:return []
     r=requests.get(url,headers=HEADERS,timeout=timeout); r.raise_for_status()
     soup=BeautifulSoup(r.text,"html.parser")
-    text=soup.get_text("\n",strip=True)
-    blocks=re.split(r"(?=Veículo certificado BMW Premium Selection)",text)
     out=[]
-    for i,b in enumerate(blocks):
-        if "Veículo certificado BMW Premium Selection" not in b:continue
+    seen=set()
+    blocks=[]
+    for a in soup.find_all("a",href=True):
+        href=a.get("href","")
+        full=urljoin(url,href)
+        if "bmwpremiumselection.bmw.pt" not in full:continue
+        if not re.search(r"/\d+/?(?:[#?].*)?$",full):continue
+        node=a
+        card=""
+        for _ in range(10):
+            node=getattr(node,"parent",None)
+            if node is None:break
+            txt=node.get_text("\n",strip=True)
+            if len(txt)>14000:break
+            if re.search(r"\bkm\b",txt,re.I) and re.search(r"Pre[cç]o",txt,re.I) and re.search(r"Veículo\s+oferecido",txt,re.I):
+                card=txt; break
+        if card and full not in seen:
+            seen.add(full); blocks.append((full,card))
+    if not blocks:
+        text=soup.get_text("\n",strip=True)
+        raw=re.split(r"(?=Veículo certificado BMW Premium Selection)",text)
+        blocks=[(url+"#offer-"+str(i),x) for i,x in enumerate(raw) if re.search(r"\bkm\b",x,re.I) and re.search(r"Pre[cç]o",x,re.I)]
+
+    for i,(vehicle_url,b) in enumerate(blocks):
         km=re.search(r"(\d{1,3}(?:[\.\s]\d{3})*)\s*km\b",b,re.I)
         price=re.search(r"Pre[cç]o:\s*([\d\.\s]+,\d{2})\s*€",b,re.I)
         dealer=re.search(r"Veículo oferecido pela\s+([^\n]+)",b,re.I)
@@ -59,7 +80,7 @@ def discover_rows(query,timeout=10):
         out.append({
             "source_key":"bmw_premium","source":"BMW Premium Selection","official":True,
             "title":title,"snippet":f"{years[0] if years else ''} · {_num(km.group(1)) or 0:,} km · {dealer.group(1).strip() if dealer else ''}".replace(",","."),
-            "url":url+"#offer-"+str(i),"condition":"used_certified","availability":"",
+            "url":vehicle_url,"condition":"used_certified","availability":"",
             "price_eur":asking,"list_price_eur":comparison,
             "conditional_price_eur":conditional,"price_condition":condition,
             "discount_eur":round(comparison-conditional,2) if comparison and conditional else None,
