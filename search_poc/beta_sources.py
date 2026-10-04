@@ -57,6 +57,7 @@ SOURCES = [
 
     # Benchmark
     {"key":"standvirtual","name":"Standvirtual — benchmark","domain":"standvirtual.com","url":"https://www.standvirtual.com/carros","kinds":["new_stock","demo_service","km0","used"],"official":False},
+    {"key":"piscapisca","name":"PiscaPisca — benchmark","domain":"piscapisca.pt","url":"https://www.piscapisca.pt/carros/usados","kinds":["used"],"official":False},
 ]
 
 CONDITION_LABELS = {
