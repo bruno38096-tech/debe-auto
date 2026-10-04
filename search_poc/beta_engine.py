@@ -495,6 +495,29 @@ def _direct_specials(q):
         except Exception:
             pass
 
+    # Volvo's national inventory is server-rendered and can be queried directly.
+    # Filter the full official stock with the same generic semantic validator used
+    # for marketplaces, so XC60 T6 does not leak T8/B5/etc.
+    if "volvo" in low:
+        try:
+            from search_poc.connectors.volvo_inventory import fetch_inventory
+            for v in fetch_inventory(timeout=8,limit=160):
+                d=v.to_dict()
+                d.update({
+                    "source_key":"volvo_inventory",
+                    "source":"Volvo — Inventário Nacional",
+                    "official":True,
+                    "title":f"Volvo {v.model} {v.variant}".strip(),
+                    "snippet":f"{v.year or ''} · {int(v.electric_range_km or 0)} km autonomia elétrica · {v.availability or ''}",
+                    "condition":"new_stock",
+                    "dealer":"Volvo Portugal",
+                    "discovery":"direct_connector",
+                })
+                if query_matches_row(q,d):
+                    out.append(d)
+        except Exception:
+            pass
+
     # Standvirtual is queried directly from its public server-rendered model page.
     # This is deliberately a benchmark source, not the canonical source of truth.
     try:
