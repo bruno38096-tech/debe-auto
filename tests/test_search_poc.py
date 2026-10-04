@@ -5,6 +5,7 @@ from search_poc.dedup import match_vehicle, cross_source_matches
 from search_poc.query_validation import query_matches_text
 from search_poc.beta_engine import _dedup, _discount
 from search_poc.connectors.standvirtual import _route_for_query
+from search_poc.connectors.volvo_inventory import _parse_inventory_html
 
 
 class SearchPocQueryValidationTests(unittest.TestCase):
@@ -85,6 +86,38 @@ class SearchPocMarketplaceRouteTests(unittest.TestCase):
 
     def test_volvo_uses_hyphenated_model_slug(self):
         self.assertTrue(_route_for_query("Volvo XC60 T6 SUV").endswith("/xc-60"))
+
+
+
+class SearchPocVolvoConnectorTests(unittest.TestCase):
+    def test_inventory_rows_keep_unique_detail_urls(self):
+        html = """
+        <div class="card">
+          <a href="/pt/shop/details/xc60-hybrid/stock-a/?token=1">
+            <span>Disponível em 2 semanas</span>
+            <h3>XC60 Core, T6 AWD Híbrido Plug-in</h3>
+            <span>2026 • 82 km autonomia elétrica</span>
+            <span>PRVP</span><span>73 908 €</span>
+          </a>
+        </div>
+        <div class="card">
+          <a href="/pt/shop/details/xc60-hybrid/stock-b/?token=2">
+            <span>Disponível em 2 semanas</span>
+            <h3>XC60 Plus, T6 AWD Híbrido Plug-in</h3>
+            <span>2026 • 81 km autonomia elétrica</span>
+            <span>PRVP</span><span>76 417 €</span>
+          </a>
+        </div>
+        """
+        rows=_parse_inventory_html(html)
+        self.assertEqual(2,len(rows))
+        self.assertNotEqual(rows[0].url,rows[1].url)
+        self.assertEqual("stock-a",rows[0].source_id)
+        self.assertEqual(73908.0,rows[0].price_eur)
+        self.assertEqual("XC60 Core",rows[0].model)
+        self.assertIn("T6",rows[0].variant)
+
+
 
 
 class SearchPocPriceTests(unittest.TestCase):
