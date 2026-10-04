@@ -66,6 +66,9 @@ def main():
     report["bmw_330e_standvirtual"]=safe("standvirtual",lambda:len(discover_bmw_330e_touring(limit=30,timeout=9)))
     report["mercedes_glc300e_certified"]=safe("mb_certified",lambda:len(discover_glc_300e_suv(timeout=5)))
     report["mercedes_glc300e_carclasse"]=safe("carclasse",lambda:len(discover_glc_300e(timeout=7)))
+    report["volvo_inventory_model_route"]=safe("volvo_model_route",lambda:raw_page(
+        "https://www.volvocars.com/pt/inventory/xc60-hybrid/","XC60 Core"
+    ))
     report["volvo_inventory_direct"]=safe("volvo_inventory",lambda:[
         {k:d.get(k) for k in ("source_id","url","model","variant","year","price_eur","electric_range_km","availability")}
         for d in (v.to_dict() for v in fetch_inventory(timeout=10,limit=20))
