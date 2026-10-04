@@ -32,6 +32,12 @@ def main():
     })
     from search_poc.connectors.standvirtual import discover_rows as sv_rows
     from search_poc.connectors.bmw_premium_generic import discover_rows as bps_generic_rows
+    from search_poc.query_validation import query_matches_text
+    report["glc_raw_matches"]=safe("glc_raw_matches",lambda:[
+        {"title":r.get("title"),"snippet":r.get("snippet"),"match":query_matches_text("Mercedes-Benz GLC 300 e SUV",r.get("title",""),r.get("snippet",""))}
+        for r in sv_rows("Mercedes-Benz GLC 300 e SUV",limit=200,timeout=10,validate=False)
+        if "glc" in (r.get("title","")+" "+r.get("snippet","")).lower()
+    ])
     report["diagnostic_samples"]=safe("samples",lambda:{
         "glc": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("Mercedes-Benz GLC 300 e SUV",limit=12,timeout=10)],
         "x1": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("BMW X1 xDrive30e SUV",limit=12,timeout=10)],
