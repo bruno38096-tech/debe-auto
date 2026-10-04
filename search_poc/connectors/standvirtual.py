@@ -8,6 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from search_poc.models import Vehicle
+from search_poc.query_validation import query_matches_text
 
 BASE="https://www.standvirtual.com"
 HEADERS={
@@ -112,6 +113,8 @@ def discover_rows(query, limit=40, timeout=12):
             "mileage_km":_km(text),"year":_year(text),"dealer":_dealer(card),
             "discovery":"marketplace_direct",
         }
+        if not query_matches_text(query,candidate["title"],candidate["snippet"]):
+            continue
         old=by_url.get(url)
         if old is None or len(candidate["title"])>len(old.get("title","")):
             by_url[url]=candidate
