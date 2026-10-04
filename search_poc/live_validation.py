@@ -30,6 +30,14 @@ def main():
         "x1":raw_page("https://www.standvirtual.com/carros/bmw/x1","xdrive30e"),
         "glc":raw_page("https://www.standvirtual.com/carros/mercedes-benz/glc","300 e"),
     })
+    from search_poc.connectors.standvirtual import discover_rows as sv_rows
+    from search_poc.connectors.bmw_premium_generic import discover_rows as bps_generic_rows
+    report["diagnostic_samples"]=safe("samples",lambda:{
+        "glc": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("Mercedes-Benz GLC 300 e SUV",limit=12,timeout=10)],
+        "x1": [{k:r.get(k) for k in ("title","snippet","year","mileage_km","price_eur","dealer")} for r in sv_rows("BMW X1 xDrive30e SUV",limit=12,timeout=10)],
+        "bps_ix3": bps_generic_rows("BMW iX3",timeout=10),
+        "bps_x1": bps_generic_rows("BMW X1 xDrive30e SUV",timeout=10),
+    })
     report["bmw_330e_bps"]=safe("bps",lambda:len(fetch_bmw_330e_touring(timeout=12)))
     report["bmw_330e_bmcar"]=safe("bmcar",lambda:inventory_summary_bmw_330e_touring(timeout=9))
     report["bmw_330e_standvirtual"]=safe("standvirtual",lambda:len(discover_bmw_330e_touring(limit=30,timeout=9)))
