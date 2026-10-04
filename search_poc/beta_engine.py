@@ -24,7 +24,7 @@ _sitemap_lock=threading.Lock()
 SITEMAP_TTL=3600
 
 # Brand-specific routing keeps searches fast while retaining national dealer coverage.
-COMMON_KEYS={"carclasse","santogal","caetano","bmcar","mcoutinho","filinto","standvirtual","piscapisca"}
+COMMON_KEYS={"carclasse","santogal","caetano","bmcar","mcoutinho","filinto","standvirtual"}
 BRAND_KEYS={
     "bmw":{"bmw_new","bmw_premium","bmw_caetano_new"},
     "mercedes":{"mercedes_new","mercedes_certified"},
@@ -551,6 +551,15 @@ def _direct_specials(q):
                     out.append(d)
         except Exception:
             pass
+
+    # PiscaPisca exposes public server-rendered model pages. Query those
+    # directly instead of relying on search-engine indexing, then reuse the
+    # exact model/variant validation and cross-source deduplication.
+    try:
+        from search_poc.connectors.piscapisca import discover_rows as pp_rows
+        out.extend(pp_rows(q,limit=80,timeout=7,pages=2))
+    except Exception:
+        pass
 
     # Standvirtual is queried directly from its public server-rendered model page.
     # This is deliberately a benchmark source, not the canonical source of truth.
