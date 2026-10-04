@@ -1,0 +1,55 @@
+name: DEBE Search PoC overlap check
+
+on:
+  push:
+    branches: [debe-search-poc]
+    paths:
+      - 'search_poc/**'
+      - '.github/workflows/search-poc-overlap.yml'
+  workflow_dispatch:
+
+jobs:
+  live-overlap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Validate real BMW 330e cross-source duplicate
+        run: |
+          python - <<'PY'
+          from search_poc.connectors.bmw_premium import fetch_bmw_330e_touring
+          from search_poc.connectors.bmcar import inventory_summary_bmw_330e_touring
+          from search_poc.beta_engine import _dedup
+
+          bps=fetch_bmw_330e_touring(timeout=12)
+          bm=inventory_summary_bmw_330e_touring(timeout=10)["vehicles"]
+          rows=[]
+          for v in bps:
+              d=v.to_dict()
+              d.update({"source_key":"bmw_premium","source":"BMW Premium Selection","official":True,
+                        "title":f"BMW Série 3 {v.variant} Touring",
+                        "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),
+                        "dealer":v.dealer,"condition":"used_certified","discovery":"direct_connector"})
+              rows.append(d)
+          for v in bm:
+              d=v.to_dict()
+              d.update({"source_key":"bmcar","source":"BMcar","official":True,
+                        "title":f"BMW Série 3 {v.variant}",
+                        "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · BMcar".replace(",","."),
+                        "dealer":"BMcar","condition":v.condition or "used_certified","discovery":"direct_connector"})
+              rows.append(d)
+
+          merged=_dedup(rows)
+          dup=[r for r in merged if len(r.get("occurrences",[]))>1]
+          print("BPS",len(bps),"BMCAR",len(bm),"MERGED",len(merged),"DUPLICATES",len(dup))
+          for r in dup:
+              print("DUP",r.get("year"),r.get("mileage_km"),r.get("price_eur"),r.get("dealer"),[(x.get("source_key"),x.get("price_eur"),x.get("mileage_km")) for x in r.get("occurrences",[])])
+          assert len(bps)>=1
+          assert len(bm)>=1
+          assert dup
+          assert any({x.get("source_key") for x in r.get("occurrences",[])} >= {"bmw_premium","bmcar"} for r in dup)
+          PY
