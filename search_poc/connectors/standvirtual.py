@@ -77,7 +77,7 @@ def _route_for_query(query):
         # Standvirtual exposes a narrower GLC 300 route. Using it for 300 e/de
         # avoids depending on which promoted GLC rows happen to land in the
         # first few pages of the broad /glc inventory.
-        if "glc" in q and re.search(r"\\b300\\s*(?:de|e)\\b",q):
+        if "glc" in q and re.search(r"\b300\s*(?:de|e)\b",q):
             return f"{BASE}/carros/mercedes-benz/glc-300?search%5Bfilter_enum_engine_code%5D=classe-glc"
         for token,slug in (("glc","glc"),("gla","gla"),("gle","gle"),("classe c","classe-c"),("classe e","classe-e")):
             if token in q:return f"{BASE}/carros/mercedes-benz/{slug}"
