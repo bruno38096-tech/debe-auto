@@ -55,7 +55,7 @@ HTML=r'''<!doctype html>
 <div class="summarybar"><div><div id="querytitle" class="querytitle">Resultados</div><div id="querymeta" class="querymeta"></div></div></div>
 <div id="notice" class="notice">Seleciona um carro para pesquisar simultaneamente nas fontes nacionais.</div>
 <div id="stats" class="stats"></div>
-<div id="loading" class="loader hidden">A pesquisar stock oficial e concessionários…</div>
+<div id="loading" class="loader hidden">A cruzar marketplaces, stock oficial e concessionários. A primeira pesquisa pode demorar alguns segundos…</div>
 <div id="results" class="results"></div>
 <details class="sourcesbox"><summary>Ver fontes consultadas</summary><div id="sources" class="sources"></div></details>
 <div class="foot">Beta técnico: algumas fontes já usam conetor direto; outras dependem temporariamente de descoberta pública indexada. Preço e disponibilidade devem ser confirmados no anúncio original.</div>
@@ -105,7 +105,7 @@ async function fetchResults(url){
   setBusy(true);
   try{
     const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),22000);
+    const timer=setTimeout(()=>controller.abort(),70000);
     const r=await fetch(url,{signal:controller.signal});
     clearTimeout(timer);
     if(!r.ok) throw new Error('Pesquisa temporariamente indisponível ('+r.status+').');
@@ -113,7 +113,7 @@ async function fetchResults(url){
     if(!text) throw new Error('A pesquisa terminou sem resposta. Tenta novamente.');
     const d=JSON.parse(text);render(d);
   }catch(e){
-    const msg=e.name==='AbortError'?'A pesquisa demorou demasiado. Tenta novamente.':String(e.message||e);
+    const msg=e.name==='AbortError'?'A pesquisa excedeu 70 segundos. Tenta novamente.':String(e.message||e);
     document.getElementById('querymeta').textContent='Pesquisa não concluída';
     document.getElementById('results').innerHTML='<div class="notice">'+esc(msg)+'</div>';
   }finally{setBusy(false)}
