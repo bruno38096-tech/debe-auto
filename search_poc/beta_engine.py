@@ -324,15 +324,21 @@ def _sitemap_urls(source, timeout=7):
         except Exception:
             continue
 
-    # One-level child sitemap traversal. Cap protects beta latency.
-    for child in children[:18]:
+    # One-level child sitemap traversal. Read child sitemaps concurrently so a
+    # slow dealer sitemap cannot serialize the whole Search request.
+    child_urls=children[:12]
+    def _read_child(child):
         try:
-            r=requests.get(child,headers=HEADERS,timeout=timeout)
-            if r.status_code>=400: continue
+            r=requests.get(child,headers=HEADERS,timeout=min(timeout,4))
+            if r.status_code>=400:return []
             soup=_xml_soup(r.text)
-            collected.extend(clean(x.get_text(strip=True)) for x in soup.find_all("loc"))
+            return [clean(x.get_text(strip=True)) for x in soup.find_all("loc")]
         except Exception:
-            continue
+            return []
+    if child_urls:
+        with ThreadPoolExecutor(max_workers=min(6,len(child_urls))) as ex:
+            for locs in ex.map(_read_child,child_urls):
+                collected.extend(locs)
 
     collected=list(dict.fromkeys(u for u in collected if u.startswith("http")))
     with _sitemap_lock:
@@ -722,11 +728,16 @@ def search_all(q, condition="all", max_per_source=3):
         hit=_cache.get(cache_key)
         if hit and now-hit[0]<CACHE_TTL:return hit[1]
 
-    direct_results=_direct_specials(q)
-    results=list(direct_results)
+    results=[]
     statuses=[]
     selected_sources=_relevant_sources(q)
-    with ThreadPoolExecutor(max_workers=min(12,max(1,len(selected_sources)))) as ex:
+
+    # The direct connector layer used to run completely before the generic
+    # national source sweep. For BMW 330e that serialized several live calls and
+    # could push the request beyond Gunicorn's worker timeout. Run both layers
+    # concurrently; result validation and deduplication remain unchanged.
+    with ThreadPoolExecutor(max_workers=min(13,max(2,len(selected_sources)+1))) as ex:
+        direct_job=ex.submit(_direct_specials,q)
         jobs={ex.submit(_source_query,q,s,max_per_source,4):s for s in selected_sources}
         for fut in as_completed(jobs):
             s=jobs[fut]
@@ -736,6 +747,11 @@ def search_all(q, condition="all", max_per_source=3):
                 statuses.append({"key":s["key"],"name":s["name"],"count":len(rows),"status":"ok" if rows else ("error" if err else "empty"),"error":err})
             except Exception as e:
                 statuses.append({"key":s["key"],"name":s["name"],"count":0,"status":"error","error":str(e)[:120]})
+        try:
+            direct_results=direct_job.result()
+        except Exception:
+            direct_results=[]
+    results[0:0]=direct_results
 
     # Direct connectors are authoritative for their current scope. Reflect their
     # hits in the source panel even if the generic public-index discovery was empty.
