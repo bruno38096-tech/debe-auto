@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request, Response
+import os
 from search_poc.beta_engine import search_all
 from search_poc.beta_sources import SOURCES, CONDITION_LABELS
 from search_poc.vehicle_catalog import CATALOG, BODY_STYLES, brands, models_for, variants_for, canonical_query
@@ -183,6 +184,18 @@ def api_sources():
 @app.get("/health")
 def health():
     return jsonify({"ok":True,"service":"debe-search-beta","sources":len(SOURCES)})
+
+def _env_truthy(name):
+    return str(os.getenv(name, "")).strip().lower() in {"1","true","yes","on","enabled"}
+
+
+# Render beta can run the complete DEBE application without changing its
+# existing start command (gunicorn search_beta_app:app). Production remains
+# unaffected because this switch is only enabled on debe-search-beta.
+if _env_truthy("DEBE_SEARCH_INTEGRATED_BETA"):
+    from app import app as integrated_app
+    app = integrated_app
+
 
 if __name__=="__main__":
     app.run(host="0.0.0.0",port=10000,debug=True)
