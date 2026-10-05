@@ -1,3 +1,8 @@
+# Search beta performs bounded multi-source I/O; keep the worker alive longer than the browser request cap.
+timeout = 85
+graceful_timeout = 20
+keepalive = 5
+
 """Gunicorn hooks for DEBE beta runtime."""
 
 def on_starting(server):
