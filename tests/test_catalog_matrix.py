@@ -88,6 +88,10 @@ class GeneralIdentityTests(unittest.TestCase):
                          "https://www.standvirtual.com/carros/bmw/serie-3")
         self.assertEqual(marketplace_model_route("Audi","A6 e-tron","station"),
                          "https://www.standvirtual.com/carros/audi/a6-avant-e-tron")
+        self.assertEqual(marketplace_model_route("Mercedes-Benz","GLC","suv","GLC 300 e"),
+                         "https://www.standvirtual.com/carros/mercedes-benz/glc-300")
+        self.assertEqual(marketplace_model_route("Mercedes-Benz","GLC","suv","AMG GLC 63"),
+                         "https://www.standvirtual.com/carros/mercedes-benz/glc-63")
 
 if __name__ == "__main__":
     unittest.main()
