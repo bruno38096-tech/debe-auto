@@ -829,12 +829,22 @@ def search_all(q, condition="all", max_per_source=3, make="", model="", variant=
     if not usable_direct:
         # Only a small prioritized index sweep is allowed to compete with the
         # live HTTP worker. The remaining sources are clearly marked deferred.
-        priority={
-            "bmw_premium":0,"mercedes_certified":1,"audi_used":2,
-            "audi_immediate":3,"standvirtual":4,"bmcar":5,
-            "carclasse":6,"santogal":7,
-        }
-        chosen=sorted(selected_sources,key=lambda src:priority.get(src["key"],20))[:4]
+        # The manufacturer programme must be eligible for every make, not
+        # only BMW, Audi or Mercedes. Previously Toyota, Porsche, Renault,
+        # Volvo etc. were consistently skipped behind unrelated dealer URLs.
+        brand_keys=set()
+        lowered=ascii_low(make or q)
+        for known_brand,keys in BRAND_KEYS.items():
+            if re.search(r"(?<![a-z0-9])"+re.escape(known_brand)+r"(?![a-z0-9])",lowered):
+                brand_keys.update(keys)
+        def source_priority(src):
+            key=src["key"]
+            if key in brand_keys:return (0,key)
+            if key=="standvirtual":return (1,key)
+            if key=="piscapisca":return (2,key)
+            if key in COMMON_KEYS:return (3,key)
+            return (4,key)
+        chosen=sorted(selected_sources,key=source_priority)[:5]
         jobs={_search_executor.submit(_source_query,q,src,max_per_source,3):src for src in chosen}
         done,unfinished=wait(jobs,timeout=6)
         for future,src in jobs.items():
