@@ -85,8 +85,29 @@ function fill(sel,items,placeholder,selected){
   if(placeholder!==null){const o=document.createElement('option');o.value='';o.textContent=placeholder;sel.appendChild(o)}
   for(const item of items){const v=Array.isArray(item)?item[0]:item, label=Array.isArray(item)?item[1]:item;const o=document.createElement('option');o.value=v;o.textContent=label;if(v===selected)o.selected=true;sel.appendChild(o)}
 }
-function updateModels(selected){const make=document.getElementById('make').value;fill(document.getElementById('model'),(catalog.catalog[make]&&Object.keys(catalog.catalog[make].models).sort())||[],'Escolher modelo',selected);updateVariants()}
-function updateVariants(selected){const make=document.getElementById('make').value,model=document.getElementById('model').value;const a=(catalog.catalog[make]&&catalog.catalog[make].models[model])||[];fill(document.getElementById('variant'),a,'Qualquer motorização',selected)}
+function recommendedBody(make,model){
+  const m=(model||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+  if(!m)return 'all';
+  // Reset the previous vehicle's body constraint when choosing a new car.
+  // This prevents e.g. BMW Touring -> Audi Q4 / Mercedes GLC being silently
+  // searched as Station Wagon, returning misleading zero-results pages.
+  if(/^(?:q[2-9]|x[1-9]|ix[1-9]|xc\d{2}|ex\d{2}|ec\d{2}|glc|gle|gla|glb|gls|eq[abecs]|macan|cayenne|kodiaq|tiguan|touareg|t-roc|t-cross|id\.4|rav4|c-hr|bz4x|nx|rx|ux|rz|kuga|tucson|sportage|qashqai|x-trail|ari ya|ariya|captur|austral|3008|5008|c5 aircross|grandland|formentor|ateca|arona|model y)\b/.test(m))return 'suv';
+  return 'all';
+}
+function updateBodyForModel(){
+  const make=document.getElementById('make').value,model=document.getElementById('model').value;
+  document.getElementById('body').value=recommendedBody(make,model);
+}
+function updateModels(selected){
+  const make=document.getElementById('make').value;
+  fill(document.getElementById('model'),(catalog.catalog[make]&&Object.keys(catalog.catalog[make].models).sort())||[],'Escolher modelo',selected);
+  updateVariants();updateBodyForModel();
+}
+function updateVariants(selected){
+  const make=document.getElementById('make').value,model=document.getElementById('model').value;
+  const a=(catalog.catalog[make]&&catalog.catalog[make].models[model])||[];
+  fill(document.getElementById('variant'),a,'Qualquer motorização',selected);
+}
 
 async function init(){
   const r=await fetch('/api/catalog');catalog=await r.json();
@@ -94,7 +115,7 @@ async function init(){
   updateModels('Série 3');updateVariants('330e');
   fill(document.getElementById('body'),catalog.body_styles,null,'station');
   document.getElementById('make').addEventListener('change',()=>updateModels());
-  document.getElementById('model').addEventListener('change',()=>updateVariants());
+  document.getElementById('model').addEventListener('change',()=>{updateVariants();updateBodyForModel()});
   document.getElementById('form').addEventListener('submit',runStructured);
   document.getElementById('advbtn').addEventListener('click',runAdvanced);
   runStructured();
