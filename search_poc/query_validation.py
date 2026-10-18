@@ -77,6 +77,10 @@ def query_matches_text(query, title="", snippet=""):
     """Reject explicit model/variant conflicts before dedup and scoring."""
     q=_compact(query)
     c=_compact((title or "")+" "+(snippet or ""))
+    # Audi A6 e-tron cannot be matched to an A6 TDI/TFSI just because the
+    # shared A6 family code is present.
+    if re.search(r"\be\s*tron\b",q) and not re.search(r"\be\s*tron\b",c):
+        return False
     qcodes=identity_codes(q)
     ccodes=identity_codes(c)
 
