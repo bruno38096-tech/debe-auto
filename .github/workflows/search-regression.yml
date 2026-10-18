@@ -40,6 +40,10 @@ jobs:
                   print("READER",u,"status",r.status_code,"elapsed",round(time.monotonic()-t,1),
                         "chars",len(r.text),"offers",len(parse_bmw_reader(r.text)),
                         "preview",repr(r.text[:250]),flush=True)
+                  for needle in ('bmw-serie-3-330e-touring/', '/carros/anuncio/', '330e Touring', 'A6 Avant e-tron'):
+                      i=r.text.find(needle)
+                      if i>=0:
+                          print('READER SNIPPET',needle,'OFFSET',i,'CONTENT',repr(r.text[max(0,i-250):i+450]),flush=True)
               except Exception as e:
                   print("READER FAILED",u,repr(e),flush=True)
           PY
