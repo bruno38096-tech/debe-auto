@@ -24,3 +24,57 @@ jobs:
           python -m unittest discover -s tests -p 'test_search_regression.py' -v
           python -m unittest discover -s tests -p 'test_bmw_reader_fallback.py' -v
           python -m unittest discover -s tests -p 'test_standvirtual_reader.py' -v
+
+      - name: Inspect SUV marketplace feeds
+        run: |
+          python - <<'PY'
+          import requests,re,time
+          from search_poc.connectors.standvirtual import _parse_reader_page
+          models=[
+            ("Audi Q4 e-tron SUV","https://www.standvirtual.com/carros/audi/q4"),
+            ("Audi Q4 e-tron precise","https://www.standvirtual.com/carros/audi/q4-e-tron"),
+            ("Mercedes GLC general","https://www.standvirtual.com/carros/mercedes-benz/glc"),
+            ("Mercedes GLC 300e","https://www.standvirtual.com/carros/mercedes-benz/glc-300-e"),
+            ("Mercedes GLC 300","https://www.standvirtual.com/carros/mercedes-benz/glc-300"),
+          ]
+          for name,url in models:
+            try:
+              t=time.monotonic()
+              r=requests.get("https://r.jina.ai/"+url,timeout=18)
+              text=r.text
+              query="Audi Q4 e-tron SUV" if "Audi" in name else "Mercedes-Benz GLC 300 e SUV"
+              rows=_parse_reader_page(text,query,limit=10)
+              snippet=text.find("/carros/anuncio/")
+              print("FEED",name,r.status_code,round(time.monotonic()-t,1),
+                    "length",len(text),"ad_links",text.count("/carros/anuncio/"),
+                    "parsed",len(rows),"preview",repr(text[snippet-160:snippet+650] if snippet>=0 else text[:250]),
+                    "offers",[(x['title'],x['price_eur']) for x in rows[:4]],flush=True)
+            except Exception as exc:
+              print("FEED FAILED",name,repr(exc),flush=True)
+          PY
+      - name: Test real Q4 and GLC search API
+        run: |
+          python - <<'PY'
+          import requests,time
+          base="https://debe-search-beta.onrender.com/search-beta/api/search"
+          queries=[
+              dict(make="Audi",model="Q4 e-tron",variant="",body="suv",condition="all"),
+              dict(make="Mercedes-Benz",model="GLC",variant="GLC 300 e",body="suv",condition="all"),
+              dict(make="Mercedes-Benz",model="GLC",variant="",body="suv",condition="all"),
+          ]
+          fails=[]
+          for params in queries:
+            try:
+              t=time.monotonic()
+              r=requests.get(base,params=params,timeout=45)
+              data=r.json()
+              items=data.get("results",[])
+              print("LIVE",params,"HTTP",r.status_code,"elapsed",round(time.monotonic()-t,1),
+                "count",len(items),"partial",data.get("partial"),
+                "sources",[(x.get("key"),x.get("status"),x.get("count")) for x in data.get("sources",[])],
+                "offers",[(x.get("title"),x.get("price_eur"),x.get("url")) for x in items[:3]],flush=True)
+              if not items:fails.append(str(params))
+            except Exception as exc:
+              fails.append(str(params)+" "+repr(exc))
+          if fails: raise SystemExit("EMPTY OR FAILED: "+"; ".join(fails))
+          PY
