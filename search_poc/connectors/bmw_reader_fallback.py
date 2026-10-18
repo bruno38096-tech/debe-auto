@@ -50,7 +50,7 @@ def parse_bmw_reader(markdown):
         text = markdown[match.end():min(limit, match.end() + 14000)]
         # The public Reader wraps asking prices in **bold Markdown**, e.g.
         # "Preço:**43.450,00 €**"; strip formatting before monetary parsing.
-        text = re.sub(r"\\*{1,3}", "", text)
+        text = re.sub(r"\*{1,3}", "", text)
         # BMW places the model year inside image alt text but the odometer
         # below the image carousel; they need not be adjacent.
         km_match = re.search(r"(\d{1,3}(?:[.\s]\d{3})+)\s*km\b", text, re.I)
