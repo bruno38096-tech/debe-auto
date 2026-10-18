@@ -9,7 +9,7 @@ on:
 jobs:
   search-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,51 +43,3 @@ jobs:
           node --check /tmp/debe-search.js
 
 
-      - name: Inspect current BMW Reader inventory format
-        run: |
-          python - <<'PY'
-          import requests
-          from search_poc.connectors.bmw_reader_fallback import URL,_OFFER,parse_bmw_reader
-          resp=requests.get("https://r.jina.ai/"+URL,timeout=20)
-          text=resp.text
-          offers=list(_OFFER.finditer(text))
-          print("BMW_FEED_DEBUG","http",resp.status_code,"chars",len(text),
-            "raw_offer_links",len(offers),"parsed",len(parse_bmw_reader(text)),
-            "price_labels",text.count("Preço"),"km_labels",text.count("km"),flush=True)
-          print("BMW_FEED_HEADER",repr(text[:1100]),flush=True)
-          if offers:
-              import re
-              match=offers[0]
-              groups={}
-              for item in offers:groups.setdefault(item.group(2),item)
-              unique=list(groups.values())
-              segment=text[match.end():unique[1].start() if len(unique)>1 else len(text)]
-              print("BMW_FEED_OFFER_BLOCK",repr(text[match.end():match.end()+2000]),flush=True)
-              print("BMW_FIRST_CARD_LEN",len(segment),
-                    "km",re.findall(r"[\\d.]+\\s*km",segment,re.I)[:6],
-                    "years",re.findall(r"20\\d{2}",segment)[:6],
-                    "price_context",repr(segment[max(0,segment.find("Preço")-130):segment.find("Preço")+260]),
-                    "end",repr(segment[-350:]),flush=True)
-          PY
-      - name: Probe supplemental stock for BMW and Mercedes
-        run: |
-          python - <<'PY'
-          from scripts.refresh_search_inventory import harvest
-          from search_poc.vehicle_identity import spec_matches
-          tests=[
-            ("BMW","Série 3","330e","station"),
-            ("Mercedes-Benz","GLC","GLC 300 e","suv"),
-            ("Porsche","911","Carrera","coupe")
-          ]
-          failures=[]
-          for make,model,variant,body in tests:
-            _,rows=harvest((make,model))
-            matching=[r for r in rows if spec_matches(make,model,variant,body,r)]
-            print("ENRICH_PROBE",make,model,variant,
-              "raw",len(rows),"exact",len(matching),
-              "examples",[(r["title"],r["url"],r.get("official")) for r in matching[:3]],flush=True)
-            if make in ("BMW","Mercedes-Benz") and not matching:
-              failures.append(make+" "+model)
-          if failures:
-            raise SystemExit("Missing enrichment: "+", ".join(failures))
-          PY
