@@ -24,6 +24,25 @@ jobs:
           python -m unittest discover -s tests -p 'test_search_regression.py' -v
           python -m unittest discover -s tests -p 'test_bmw_reader_fallback.py' -v
 
+      - name: Probe direct Reader feeds
+        run: |
+          python - <<'PY'
+          import requests, time
+          from search_poc.connectors.bmw_reader_fallback import parse_bmw_reader
+          urls=[
+            'https://r.jina.ai/https://bmwpremiumselection.bmw.pt/carros-usados/bmw-serie-3/330e-touring/',
+            'https://r.jina.ai/https://www.standvirtual.com/carros/audi/a6-avant-e-tron',
+          ]
+          for u in urls:
+              try:
+                  t=time.monotonic()
+                  r=requests.get(u,timeout=22)
+                  print("READER",u,"status",r.status_code,"elapsed",round(time.monotonic()-t,1),
+                        "chars",len(r.text),"offers",len(parse_bmw_reader(r.text)),
+                        "preview",repr(r.text[:250]),flush=True)
+              except Exception as e:
+                  print("READER FAILED",u,repr(e),flush=True)
+          PY
       - name: Live search smoke test (BMW and Audi)
         env:
           PYTHONUNBUFFERED: '1'
