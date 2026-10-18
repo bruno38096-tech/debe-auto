@@ -805,38 +805,57 @@ def search_all(q, condition="all", max_per_source=3):
     statuses=[]
     selected_sources=_relevant_sources(q)
 
-    # The direct connector layer used to run completely before the generic
-    # national source sweep. For BMW 330e that serialized several live calls and
-    # could push the request beyond Gunicorn's worker timeout. Run both layers
-    # concurrently; result validation and deduplication remain unchanged.
-    # The first HTTP response must be timely even if dealer sites or public
-    # search indexes are slow. Pending discoveries never block the request.
+    # Give validated dealer / marketplace connectors priority. Launching
+    # ten expensive public-index crawls at once starved the direct connectors
+    # and resulted in all sources timing out, despite real inventory online.
     direct_job=_search_executor.submit(_direct_specials,q)
-    jobs={_search_executor.submit(_source_query,q,src,max_per_source,4):src for src in selected_sources}
-    done,pending=wait([direct_job,*jobs],timeout=17)
-    for fut,src in jobs.items():
-        if fut in pending:
-            statuses.append({"key":src["key"],"name":src["name"],"count":0,"status":"timeout",
-                             "error":"Fonte excedeu o tempo desta pesquisa."})
-            fut.cancel()
-            continue
-        try:
-            rows,err=fut.result()
-            results.extend(rows)
-            statuses.append({"key":src["key"],"name":src["name"],"count":len(rows),
-                             "status":"ok" if rows else ("error" if err else "empty"),"error":err})
-        except Exception as exc:
-            statuses.append({"key":src["key"],"name":src["name"],"count":0,
-                             "status":"error","error":str(exc)[:120]})
+    completed,pending=wait([direct_job],timeout=15)
     direct_results=[]
-    if direct_job in done:
+    if direct_job in completed:
         try:
-            direct_results=direct_job.result()
-        except Exception:
-            pass
+            direct_results=direct_job.result() or []
+        except Exception as exc:
+            logging.getLogger(__name__).warning("DEBE direct layer failed: %s",str(exc)[:180])
     else:
         direct_job.cancel()
-    partial=bool(pending)
+
+    usable_direct=any(query_matches_row(q,dict(row)) and _complete_vehicle_row(dict(row))
+                      for row in direct_results)
+    statuses=[]
+    results=[]
+    checked_keys=set()
+    if not usable_direct:
+        # Only a small prioritized index sweep is allowed to compete with the
+        # live HTTP worker. The remaining sources are clearly marked deferred.
+        priority={
+            "bmw_premium":0,"mercedes_certified":1,"audi_used":2,
+            "audi_immediate":3,"standvirtual":4,"bmcar":5,
+            "carclasse":6,"santogal":7,
+        }
+        chosen=sorted(selected_sources,key=lambda src:priority.get(src["key"],20))[:4]
+        jobs={_search_executor.submit(_source_query,q,src,max_per_source,3):src for src in chosen}
+        done,unfinished=wait(jobs,timeout=6)
+        for future,src in jobs.items():
+            checked_keys.add(src["key"])
+            if future in unfinished:
+                future.cancel()
+                statuses.append({"key":src["key"],"name":src["name"],"count":0,
+                                 "status":"timeout","error":"Tempo da fonte excedido."})
+                continue
+            try:
+                rows,error=future.result()
+                results.extend(rows)
+                statuses.append({"key":src["key"],"name":src["name"],
+                                 "count":len(rows),"status":"ok" if rows else ("error" if error else "empty"),
+                                 "error":error})
+            except Exception as exc:
+                statuses.append({"key":src["key"],"name":src["name"],"count":0,
+                                 "status":"error","error":str(exc)[:120]})
+    for src in selected_sources:
+        if src["key"] not in checked_keys:
+            statuses.append({"key":src["key"],"name":src["name"],"count":0,
+                             "status":"deferred","error":"Fonte não consultada nesta passagem rápida."})
+    partial=bool(pending or any(x["status"] in {"timeout","deferred"} for x in statuses))
     results[0:0]=direct_results
 
     # Direct connectors are authoritative for their current scope. Reflect their
@@ -921,7 +940,7 @@ def search_all(q, condition="all", max_per_source=3):
         "used":sum(1 for r in results if r.get("condition")=="used"),
         "explicit_discount":sum(1 for r in results if r.get("discount_pct")),
         "sources_with_hits":sum(1 for s in statuses if int(s.get("accepted_count",s.get("count") or 0))>0),
-        "sources_checked":len(selected_sources)-sum(1 for st in statuses if st["status"]=="timeout"),
+        "sources_checked":sum(1 for st in statuses if st["status"] not in {"timeout","deferred"}),
         "sources_timeout":sum(1 for st in statuses if st["status"]=="timeout"),
         "sources_error":sum(1 for st in statuses if st["status"]=="error"),
         "vehicles_with_missing_facts":sum(1 for r in results if r.get("data_incomplete")),
