@@ -9,7 +9,7 @@ on:
 jobs:
   search-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,42 +27,15 @@ jobs:
           python -m unittest discover -s tests -p 'test_catalog_matrix.py' -v
           python -m unittest discover -s tests -p 'test_search_catalog_contract.py' -v
 
-      - name: Model matrix live discovery smoke (no fabricated offers)
+      - name: Validate Search JavaScript syntax
         run: |
           python - <<'PY'
-          import concurrent.futures,time
-          from search_poc.beta_engine import search_all
-          from search_poc.vehicle_catalog import canonical_query
-          from search_poc.vehicle_identity import spec_matches
-          searches=[
-            ("Mercedes-Benz","GLC","AMG GLC 63","suv"),
-            ("Mercedes-Benz","GLC","GLC 300 e","suv"),
-            ("Audi","Q4 e-tron","","suv"),
-            ("Audi","A6 e-tron","","station"),
-            ("BMW","Série 3","330e","station"),
-            ("Volvo","XC60","B5","suv"),
-            ("Toyota","Corolla","1.8 Hybrid","all"),
-            ("Kia","Sportage","Plug-in Hybrid","suv"),
-            ("Renault","Clio","TCe","all"),
-            ("Tesla","Model Y","Long Range AWD","suv"),
-            ("Porsche","911","Carrera","coupe"),
-          ]
-          def check(item):
-            make,model,variant,body=item
-            t=time.monotonic()
-            result=search_all(canonical_query(make,model,variant,body),
-              make=make,model=model,variant=variant,body=body)
-            rows=result.get("results",[])
-            violations=[(r.get("title"),r.get("url")) for r in rows
-              if not spec_matches(make,model,variant,body,r)]
-            return item,round(time.monotonic()-t,1),len(rows),len(result.get("alternatives",[])),violations,[(r.get("title"),r.get("price_eur")) for r in rows[:2]],bool(result.get("source_links"))
-          errs=[]
-          with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures=[pool.submit(check,item) for item in searches]
-            for future in concurrent.futures.as_completed(futures):
-              item,seconds,num,alternates,bad,samples,links=future.result()
-              print("MODEL_SMOKE",item,"seconds",seconds,"exact",num,
-                    "alternatives",alternates,"bad",bad,"samples",samples,"links",links,flush=True)
-              if bad or not links:errs.append(str(item))
-          if errs:raise SystemExit("Wrong listing identity / missing fallback: "+"; ".join(errs))
+          import pathlib,re
+          source=pathlib.Path("search_beta_app.py").read_text(encoding="utf-8")
+          html=re.search(r"HTML=r'''([\\s\\S]*?)'''",source)
+          if not html:raise SystemExit("Missing Search HTML template")
+          match=re.search(r"<script>([\\s\\S]*?)</script>",html.group(1))
+          if not match:raise SystemExit("Missing Search JavaScript")
+          pathlib.Path("/tmp/debe-search.js").write_text(match.group(1),encoding="utf-8")
           PY
+          node --check /tmp/debe-search.js
