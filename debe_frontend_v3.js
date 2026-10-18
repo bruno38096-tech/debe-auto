@@ -170,7 +170,7 @@
     const ageScore = Math.max(25, Math.min(98, 100 - age * 2.4)), annualScore = Math.max(25, Math.min(98, 100 - (annual / 1000) * 2.2)), mileageScore = Math.max(20, Math.min(98, 100 - (k / 1000) * 0.18));
     const preliminaryScore = Math.max(25, Math.min(95, Math.round(ageScore * 0.35 + annualScore * 0.35 + mileageScore * 0.30)));
 
-    if (!model || !Number.isFinite(y) || y < 1990 || y > new Date().getFullYear() + 1 || !km.trim() || !/^\\s*[\\d\\s.,]+\\s*(?:km)?\\s*$/i.test(km)) {
+    if (!model || !Number.isFinite(y) || y < 1990 || y > new Date().getFullYear() + 1 || !km.trim() || !/^\s*[\d\s.,]+\s*(?:km)?\s*$/i.test(km)) {
       alert('Para calcular um score válido, confirma o modelo, o ano e a quilometragem do anúncio.');
       return;
     }
