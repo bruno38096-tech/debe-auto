@@ -75,6 +75,8 @@ def main():
     previous=load_previous()
     pairs=[(make,model) for make,entry in CATALOG.items()
            for model in entry["models"]]
+    limit=int(os.getenv("DEBE_INVENTORY_LIMIT","0") or 0)
+    if limit>0:pairs=pairs[:limit]
     print("CATALOG_MODELS",len(pairs),flush=True)
     collected={}
     good=0;failed=0
@@ -91,6 +93,8 @@ def main():
                 collected[label]=old
                 failed+=1
             print("MODEL",label,"new",len(rows),"kept_old",len(collected[label])-len(rows),flush=True)
+    if good<3 and not any(collected.values()):
+        raise RuntimeError("Insufficient verified public listing data; retaining previous snapshot")
     snapshot={
         "generated_at":timestamp,
         "model_count":len(pairs),
