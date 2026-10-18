@@ -604,10 +604,10 @@ def _direct_specials(q):
 
     def piscapisca():
         from search_poc.connectors.piscapisca import discover_rows
-        return discover_rows(q,limit=80,timeout=7,pages=2)
+        return discover_rows(q,limit=60,timeout=5,pages=1)
     def standvirtual():
         from search_poc.connectors.standvirtual import discover_rows
-        return discover_rows(q,limit=120,timeout=8)
+        return discover_rows(q,limit=80,timeout=6,max_pages=1)
     tasks.extend((piscapisca,standvirtual))
 
     results=[]
@@ -930,6 +930,9 @@ def search_all(q, condition="all", max_per_source=3):
     }
     source_links=[{"name":src["name"],"url":src["url"]} for src in selected_sources
                   if src.get("url","").startswith("https://")]
+    if "audi" in ascii_low(q) and "a6" in ascii_low(q) and "e-tron" in ascii_low(q):
+        source_links.insert(0,{"name":"Standvirtual — Audi A6 Avant e-tron",
+                               "url":"https://www.standvirtual.com/carros/audi/a6-avant-e-tron"})
     if "bmw" in ascii_low(q) and "330e" in ascii_low(q) and "touring" in ascii_low(q):
         source_links.insert(0,{"name":"BMW Premium Selection — 330e Touring",
                                "url":"https://bmwpremiumselection.bmw.pt/carros-usados/bmw-serie-3/330e-touring/"})
