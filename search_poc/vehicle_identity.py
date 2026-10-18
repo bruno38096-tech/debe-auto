@@ -71,6 +71,7 @@ def spec_matches(make="",model="",variant="",body="all",row=None):
                 and re.search(r"\b"+re.escape(wanted_model[-1])+r"\d{2}[a-z]\b",identity)):
             return False
 
+    chosen_variant=variant
     variant=norm(variant)
     if variant:
         # Model prefix in Mercedes catalog dropdown is not a powertrain token.
@@ -85,6 +86,8 @@ def spec_matches(make="",model="",variant="",body="all",row=None):
         # Check exact engine/trim tokens. Never collapse AMG 63 into GLC 300,
         # 300e into 300de, a 45 quattro into a 35 e-tron, etc.
         words=variant.split()
+        if variant=="plugin hybrid" and (contains(identity,"phev") or contains(identity,"plugin")):
+            words=[]
         # Keep both 's' and 'rs' for Porsche/Audi trims.
         for token in words:
             if token in {"ver","edition"}:
@@ -94,8 +97,23 @@ def spec_matches(make="",model="",variant="",body="all",row=None):
                 if token=="plugin" and contains(identity,"phev"):continue
                 if token=="electric" and (contains(identity,"eletrico") or contains(identity,"etron")):continue
                 return False
+        # A shorter badge (Carrera, RWD, Macan, Single Motor) must not
+        # capture a longer, explicitly different catalog variant.
+        from search_poc.vehicle_catalog import variants_for
+        expected_tokens=len(norm(chosen_variant).split())
+        for competitor in variants_for(make,model):
+            if norm(competitor)==norm(chosen_variant):
+                continue
+            if len(norm(competitor).split())<=expected_tokens:
+                continue
+            if contains(identity,competitor):
+                return False
 
     requested_body=norm(body)
+    if requested_body=="coupe" and norm(make)=="porsche" and norm(model) in {"911","718 cayman"}:
+        # 911 Coupé adverts normally say only "911 Carrera"; exclude named
+        # convertibles, Targa and Cabrio rather than requiring "Coupé".
+        return not any(contains(identity,t) for t in ("cabrio","cabriolet","targa","speedster","roadster"))
     if requested_body in {"station","coupe","cabrio","sedan"}:
         alternatives={
             "station":("touring","avant","station","estate","carrinha","wagon","variant","combi","sportstourer","sw"),
