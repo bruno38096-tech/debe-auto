@@ -9,7 +9,7 @@ on:
 jobs:
   search-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -39,3 +39,48 @@ jobs:
           pathlib.Path("/tmp/debe-search.js").write_text(match.group(1),encoding="utf-8")
           PY
           node --check /tmp/debe-search.js
+
+      - name: Verify production Search across brands and incorrect AMG matching
+        run: |
+          python - <<'PY'
+          import requests,time
+          from search_poc.vehicle_identity import spec_matches
+          endpoint="https://debe-search-beta.onrender.com/search-beta/api/search"
+          cases=[
+            ("Mercedes-Benz","GLC","AMG GLC 63","suv",False),
+            ("Mercedes-Benz","GLC","GLC 300 e","suv",True),
+            ("Audi","Q4 e-tron","","suv",True),
+            ("Audi","A6 e-tron","","station",True),
+            ("BMW","Série 3","330e","station",True),
+            ("Volvo","XC60","B5","suv",True),
+            ("Toyota","Corolla","1.8 Hybrid","all",True),
+            ("Kia","Sportage","Plug-in Hybrid","suv",True),
+            ("Renault","Clio","TCe","all",True),
+            ("Tesla","Model Y","Long Range AWD","suv",True),
+            ("Porsche","911","Carrera","coupe",True),
+            ("Peugeot","208","E-208","all",False),
+            ("Mercedes-Benz","GLC","","suv",False),
+          ]
+          fail=[]
+          for make,model,variant,body,expect_list in cases:
+            t=time.monotonic()
+            try:
+              response=requests.get(endpoint,params=dict(make=make,model=model,variant=variant,body=body,condition="all"),timeout=42)
+              response.raise_for_status()
+              data=response.json()
+              results=data.get("results",[])
+              wrong=[r.get("title") for r in results if not spec_matches(make,model,variant,body,r)]
+              print("LIVE",make,model,variant,body,"exact",len(results),
+                    "sec",round(time.monotonic()-t,1),"status",data.get("stock_status"),
+                    "alternatives",len(data.get("alternatives",[])),
+                    "wrong",wrong,
+                    "examples",[(r.get("title"),r.get("price_eur"),r.get("url")) for r in results[:2]],flush=True)
+              if wrong or not data.get("source_links") or not data.get("stock_status"):
+                fail.append("identity / response contract: "+str((make,model,variant)))
+              if expect_list and not results:
+                fail.append("no confirmed listings: "+str((make,model,variant)))
+              if not results and data.get("stock_status")!="not_confirmed":
+                fail.append("missing honest no-stock status: "+str((make,model,variant)))
+            except Exception as exc:fail.append(str((make,model,variant))+": "+repr(exc))
+          if fail:raise SystemExit("LIVE SEARCH REGRESSIONS: "+"; ".join(fail))
+          PY
