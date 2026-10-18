@@ -608,13 +608,27 @@ def _direct_specials(q):
     tasks.extend((piscapisca,standvirtual))
 
     results=[]
-    with ThreadPoolExecutor(max_workers=min(8,len(tasks))) as pool:
+    pool=ThreadPoolExecutor(max_workers=min(8,len(tasks)))
+    try:
         futures=[pool.submit(fn) for fn in tasks]
-        for future in as_completed(futures):
+        # A slow marketplace paginating three pages must not erase already
+        # completed BMW, Mercedes or dealer feed results.
+        done,pending=wait(futures,timeout=12)
+        for future in done:
             try:
                 results.extend(future.result() or [])
-            except Exception:
-                pass
+            except Exception as exc:
+                logging.getLogger(__name__).warning(
+                    "DEBE direct connector failed: %s",type(exc).__name__)
+        for future in pending:
+            future.cancel()
+        if pending:
+            logging.getLogger(__name__).info(
+                "DEBE direct discovery partial: %s/%s finished",
+                len(done),len(futures))
+    finally:
+        # shutdown(wait=True) would block until every slow source completes.
+        pool.shutdown(wait=False,cancel_futures=True)
     return results
 
 
