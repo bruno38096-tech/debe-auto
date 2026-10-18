@@ -78,12 +78,16 @@ def _route_for_query(query):
         # avoids depending on which promoted GLC rows happen to land in the
         # first few pages of the broad /glc inventory.
         if "glc" in q and re.search(r"\b300\s*(?:de|e)\b",q):
-            return f"{BASE}/carros/mercedes-benz/glc-300?search%5Bfilter_enum_engine_code%5D=classe-glc"
+            # This public 300 route contains both 300 e and 300 de.
+            # Validate the engine from each individual vehicle URL below.
+            return f"{BASE}/carros/mercedes-benz/glc-300"
         for token,slug in (("glc","glc"),("gla","gla"),("gle","gle"),("classe c","classe-c"),("classe e","classe-e")):
             if token in q:return f"{BASE}/carros/mercedes-benz/{slug}"
     if "audi" in q and "a6" in q and ("e-tron" in q or "etron" in q):
         station=any(x in q for x in ("avant","station","wagon","carrinha","estate"))
         return f"{BASE}/carros/audi/a6-avant-e-tron" if station else f"{BASE}/carros/audi/a6-sportback-e-tron"
+    if "audi" in q and re.search(r"\bq4\b",q):
+        return f"{BASE}/carros/audi/q4-e-tron"
     if "audi" in q:
         # A4/A6 Avant have dedicated result routes and otherwise get diluted
         # by saloons when a station-wagon body is requested.
@@ -103,40 +107,69 @@ def _route_for_query(query):
     return ""
 
 
-_READER_LINK=re.compile(
-    r'\[([^\]\n]{8,180})\]\((https?://(?:www\.)?standvirtual\.com/carros/anuncio/[^)\s]+)\)',
+_READER_OFFER_URL = re.compile(
+    r'https?://(?:www\.)?standvirtual\.com/carros/anuncio/[a-z0-9-]+-ID[a-z0-9]+\.html',
+    re.I,
+)
+_READER_TITLE_LINK = re.compile(
+    r'\[([^\]\n]{8,220})\]\((https?://(?:www\.)?standvirtual\.com/carros/anuncio/[^)\s]+)\)',
     re.I,
 )
 
 
-def _parse_reader_page(markdown, query, limit=50, validate=True):
-    """Parse independent Standvirtual offer links from public Reader markdown.
+def _reader_offer_title(url, text):
+    """Use the advert's own title when available; otherwise its public URL slug."""
+    for match in _READER_TITLE_LINK.finditer(text):
+        if match.group(2).split("?")[0] == url and not match.group(1).startswith("!["):
+            label=match.group(1).strip()
+            if not label.lower().startswith(("image ","foto ")):
+                return label
+    slug=url.rstrip("/").rsplit("/",1)[-1]
+    slug=re.sub(r"-ID[a-z0-9]+\.html$", "",slug,flags=re.I)
+    # Standvirtual's -ver- separates model and version, not engine identity.
+    # Normalize 'GLC 300-ver-e' to 'GLC 300 e' for exact powertrain matching.
+    slug=slug.replace("-ver-","-")
+    label=re.sub(r"\s+"," ",slug.replace("-"," ")).strip()
+    label=re.sub(r"\baudi\b","Audi",label,flags=re.I)
+    label=re.sub(r"\bmercedes benz\b","Mercedes-Benz",label,flags=re.I)
+    label=re.sub(r"\bbmw\b","BMW",label,flags=re.I)
+    label=re.sub(r"\b(q[2-9]|glc|gle|gla|glb|xc\d{2}|ex\d{2})\b",
+                 lambda m:m.group(1).upper(),label,flags=re.I)
+    return label
 
-    Never derive fictional URLs or attach an unrelated marketplace price.
+
+def _parse_reader_page(markdown, query, limit=50, validate=True):
+    """Read individual adverts from Markdown image *and* title links.
+
+    On many Standvirtual result pages the vehicle link is on the thumbnail
+    (nested Markdown syntax), not on a text heading. Retain the original URL,
+    and attach only facts appearing before the next distinct vehicle advert.
     """
-    matches=[m for m in _READER_LINK.finditer(markdown or "")
-             if re.search(r"\b(?:BMW|Audi|Mercedes|Volvo|Porsche)\b",m.group(1),re.I)]
-    out=[];seen=set()
-    for index,match in enumerate(matches):
-        title,url=match.groups()
-        url=url.split("?")[0]
-        if url in seen:
+    matches=list(_READER_OFFER_URL.finditer(markdown or ""))
+    distinct=[]
+    seen_urls=set()
+    for match in matches:
+        url=match.group(0).split("?")[0]
+        if url not in seen_urls:
+            seen_urls.add(url)
+            distinct.append((url,match.start(),match.end()))
+    out=[]
+    for index,(url,position,after) in enumerate(distinct):
+        boundary=distinct[index+1][1] if index+1<len(distinct) else len(markdown)
+        block=markdown[after:min(boundary,after+4500)]
+        title=_reader_offer_title(url, markdown[max(0,position-250):min(boundary,position+4500)])
+        if validate and not query_matches_text(query,title,title+" "+block[:550]):
             continue
-        end=matches[index+1].start() if index+1<len(matches) else len(markdown)
-        block=markdown[match.end():min(end,match.end()+7500)]
-        km_match=re.search(r"mileage\s+(\d{1,3}(?:[ .]\d{3})*|\d+)\s*km",block,re.I)
-        year_match=re.search(r"first_registration_year\s+(20\d{2})",block,re.I)
-        price_match=re.search(r"###\s*(\d{1,3}(?:[ .]\d{3})+)\s*EUR\b",block,re.I)
+        km_match=re.search(r'\bmileage\s+(\d{1,3}(?:[ .]\d{3})*|\d+)\s*km\b',block,re.I)
+        year_match=re.search(r'\bfirst_registration_year\s+(20\d{2})\b',block,re.I)
+        price_match=re.search(r'###\s*(\d{1,3}(?:[ .]\d{3})+)\s*EUR\b',block,re.I)
         if not (km_match and year_match and price_match):
             continue
-        km=int(re.sub(r"\D","",km_match.group(1)))
+        km=int(re.sub(r'\D','',km_match.group(1)))
         year=int(year_match.group(1))
-        price=int(re.sub(r"\D","",price_match.group(1)))
+        price=int(re.sub(r'\D','',price_match.group(1)))
         if not (2010<=year<=2030 and 0<=km<1000000 and 3000<=price<=1000000):
             continue
-        if validate and not query_matches_text(query,title,title+" "+block[:650]):
-            continue
-        seen.add(url)
         out.append({
             "source_key":"standvirtual","source":"Standvirtual — benchmark","official":False,
             "title":title,"snippet":f"{year} · {km:,} km".replace(",","."),
