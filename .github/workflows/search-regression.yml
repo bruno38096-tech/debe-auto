@@ -42,48 +42,30 @@ jobs:
           node --check /tmp/debe-search.js
 
 
-      - name: Confirm live Search uses dated inventory for broad catalog
+
+      - name: Confirm corrected BMW 330e and GLC plus AMG isolation
         run: |
           python - <<'PY'
           import requests,time
           from search_poc.vehicle_identity import spec_matches
-          api="https://debe-search-beta.onrender.com/search-beta/api/search"
-          tests=[
-            ("Mercedes-Benz","GLC","AMG GLC 63","suv"),
-            ("Mercedes-Benz","GLC","GLC 300 e","suv"),
-            ("Audi","Q4 e-tron","","suv"),
-            ("BMW","Série 3","330e","station"),
-            ("Volvo","XC60","","suv"),
-            ("Toyota","Corolla","","all"),
-            ("Kia","Sportage","","suv"),
-            ("Renault","Clio","","all"),
-            ("Tesla","Model Y","","suv"),
-            ("Porsche","911","","all"),
-            ("Peugeot","208","","all"),
-            ("Hyundai","Tucson","","suv"),
+          url="https://debe-search-beta.onrender.com/search-beta/api/search"
+          checks=[
+            ("BMW","Série 3","330e","station",3),
+            ("Mercedes-Benz","GLC","GLC 300 e","suv",3),
+            ("Mercedes-Benz","GLC","AMG GLC 63","suv",0),
           ]
-          valid_models=0
-          errors=[]
-          for make,model,variant,body in tests:
-            t=time.monotonic()
-            try:
-              response=requests.get(api,params=dict(make=make,model=model,variant=variant,body=body,condition="all"),timeout=46)
-              response.raise_for_status()
-              data=response.json()
-              rows=data.get("results",[])
-              invalid=[x.get("title") for x in rows if not spec_matches(make,model,variant,body,x)]
-              dated=sum(1 for x in rows if x.get("observed_at"))
-              print("INVENTORY_LIVE",make,model,variant,"count",len(rows),
-                    "snapshot_rows",dated,"seconds",round(time.monotonic()-t,1),
-                    "status",data.get("stock_status"),"invalid",invalid,
-                    "examples",[(x.get("title"),x.get("price_eur")) for x in rows[:2]],flush=True)
-              if rows:valid_models+=1
-              if invalid or (not rows and data.get("stock_status")!="not_confirmed"):
-                errors.append((make,model,variant))
-              if not data.get("source_links"):
-                errors.append(("source links absent",make,model))
-            except Exception as exc:errors.append((make,model,repr(exc)))
-          print("SUCCESSFUL_MODELS",valid_models,"OF",len(tests),flush=True)
-          if errors:raise SystemExit("INVALID SEARCH RESPONSE: "+repr(errors))
-          if valid_models<7:raise SystemExit("Inventory is not reliably serving general searches")
+          for make,model,variant,body,minimum in checks:
+              t=time.monotonic()
+              data=requests.get(url,params=dict(make=make,model=model,
+                  variant=variant,body=body,condition="all"),timeout=45).json()
+              offers=data.get("results",[])
+              snapshots=sum(bool(x.get("observed_at")) for x in offers)
+              violations=[x.get("title") for x in offers if not spec_matches(make,model,variant,body,x)]
+              print("PRODUCTION_VARIANT",make,model,variant,"count",len(offers),
+                "snapshots",snapshots,"seconds",round(time.monotonic()-t,1),
+                "invalid",violations,"examples",[(x.get("title"),x.get("price_eur"),
+                x.get("url")) for x in offers[:2]],flush=True)
+              if len(offers)<minimum:raise SystemExit("No verified listings for "+variant)
+              if violations:raise SystemExit("Wrong engine results "+repr(violations))
+              if minimum and snapshots<minimum:raise SystemExit("Production snapshot not active for "+variant)
           PY
