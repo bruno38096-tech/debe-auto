@@ -47,6 +47,18 @@ def supplemental_rows(make, model):
     independently extracted year, odometer and published price.
     """
     extra=[]
+    if make=="Audi" and model=="A5":
+        from search_poc.connectors.standvirtual import _reader_rows
+        # Modern Audi A5 e-hybrid is categorised under Avant/Limousine,
+        # not the historic /a5 generic inventory dominated by TDI/TFSI.
+        for slug in ("a5-avant","a5-limousine"):
+            try:
+                extra.extend(_reader_rows(
+                    "https://www.standvirtual.com/carros/audi/"+slug+
+                    "?search%5Bfilter_enum_fuel_type%5D=plugin-hybrid",
+                    "",timeout=10,limit=45,validate=False))
+            except Exception as exc:
+                print("A5_EHYBRID_FEED_ERROR",slug,str(exc)[:120],flush=True)
     if make=="BMW" and model=="Série 3":
         try:
             from search_poc.connectors.bmw_reader_fallback import discover_rows as bmw_offers
