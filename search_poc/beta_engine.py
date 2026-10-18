@@ -12,6 +12,7 @@ import html, re, time, threading, requests, unicodedata, logging
 from search_poc.beta_sources import SOURCES
 from search_poc.query_validation import query_matches_row, identity_codes
 from search_poc.vehicle_identity import spec_matches, marketplace_model_route
+from search_poc.inventory_cache import model_inventory
 
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
@@ -501,13 +502,16 @@ def _source_query(q, source, limit=3, timeout=8):
         out.append(_detail_enrich(row,source,timeout=min(timeout,3)))
     return out,error
 
-def _direct_specials(q, make='', model='', variant='', body='all'):
+def _direct_specials(q, make='', model='', variant='', body='all', condition='all'):
     """Run independent direct inventory connectors concurrently.
 
     A sequential chain of BMW/marketplace requests previously exceeded the
     default Gunicorn worker timeout on a cold request.
     """
     low=ascii_low(q)
+    cached=(model_inventory(make,model) if make and model and condition in {"all","used"} else [])
+    if cached and (not variant or any(spec_matches(make,model,variant,body,row) for row in cached)):
+        return cached
     tasks=[]
 
     if "mercedes" in low and "glc" in low and ("300 e" in low or "300e" in low):
@@ -634,7 +638,7 @@ def _direct_specials(q, make='', model='', variant='', body='all'):
     finally:
         # shutdown(wait=True) would block until every slow source completes.
         pool.shutdown(wait=False,cancel_futures=True)
-    return results
+    return cached+results
 
 
 def _identity_codes_from_row(row):
@@ -810,7 +814,7 @@ def search_all(q, condition="all", max_per_source=3, make="", model="", variant=
     # Give validated dealer / marketplace connectors priority. Launching
     # ten expensive public-index crawls at once starved the direct connectors
     # and resulted in all sources timing out, despite real inventory online.
-    direct_job=_search_executor.submit(_direct_specials,q,make,model,variant,body)
+    direct_job=_search_executor.submit(_direct_specials,q,make,model,variant,body,condition)
     completed,pending=wait([direct_job],timeout=15)
     direct_results=[]
     if direct_job in completed:
