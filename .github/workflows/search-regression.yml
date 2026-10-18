@@ -24,3 +24,28 @@ jobs:
           python -m unittest discover -s tests -p 'test_search_regression.py' -v
           python -m unittest discover -s tests -p 'test_bmw_reader_fallback.py' -v
           python -m unittest discover -s tests -p 'test_standvirtual_reader.py' -v
+
+      - name: Live inventory smoke test BMW and Audi
+        run: |
+          python - <<'PY'
+          import requests,time,sys
+          api="https://debe-search-beta.onrender.com/search-beta/api/search"
+          checks=[
+            {"make":"BMW","model":"Série 3","variant":"330e","body":"station","condition":"all"},
+            {"make":"Audi","model":"A6 e-tron","variant":"","body":"station","condition":"all"},
+          ]
+          failed=[]
+          for params in checks:
+              begin=time.monotonic()
+              response=requests.get(api,params=params,timeout=55)
+              response.raise_for_status()
+              payload=response.json()
+              items=payload.get("results",[])
+              print("LIVE",params["make"],params["model"],"seconds",round(time.monotonic()-begin,1),
+                    "count",len(items),"partial",payload.get("partial"),
+                    "sources",[(x.get("key"),x.get("status"),x.get("count")) for x in payload.get("sources",[])],
+                    "offers",[(x.get("title"),x.get("price_eur"),x.get("url")) for x in items[:3]],flush=True)
+              if len(items)==0:failed.append(params["make"]+" "+params["model"])
+          if failed:
+              sys.exit("Live Search returned no listings for: "+", ".join(failed))
+          PY
