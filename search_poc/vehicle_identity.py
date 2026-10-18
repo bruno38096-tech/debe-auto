@@ -139,7 +139,7 @@ MAKE_SLUGS={
 }
 
 
-def marketplace_model_route(make,model,body="all"):
+def marketplace_model_route(make,model,body="all",variant=""):
     """Generate a safe Standvirtual model-directory URL for the whole catalog."""
     import re
     from urllib.parse import quote
@@ -161,5 +161,10 @@ def marketplace_model_route(make,model,body="all"):
     if brand=="audi" and m=="a6 etron":
         slug="a6-avant-e-tron" if norm(body)=="station" else "a6-sportback-e-tron"
     if brand=="mercedes benz" and m=="glc":
-        slug="glc"
+        # Public 300 and AMG directories avoid burying precise powertrains
+        # among unrelated GLC listings. This applies systematically to
+        # engine badges, not to individually hard-coded vehicle adverts.
+        v=norm(variant)
+        code=re.search(r"(?<![0-9])(220|300|450|43|63)(?![0-9])",v)
+        slug="glc-"+code.group(1) if code else "glc"
     return "https://www.standvirtual.com/carros/"+quote(maker,safe="-")+"/"+quote(slug,safe="-")
