@@ -103,6 +103,60 @@ def _route_for_query(query):
     return ""
 
 
+_READER_LINK=re.compile(
+    r'\[([^\]\n]{8,180})\]\((https?://(?:www\.)?standvirtual\.com/carros/anuncio/[^)\s]+)\)',
+    re.I,
+)
+
+
+def _parse_reader_page(markdown, query, limit=50, validate=True):
+    """Parse independent Standvirtual offer links from public Reader markdown.
+
+    Never derive fictional URLs or attach an unrelated marketplace price.
+    """
+    matches=[m for m in _READER_LINK.finditer(markdown or "")
+             if re.search(r"\b(?:BMW|Audi|Mercedes|Volvo|Porsche)\b",m.group(1),re.I)]
+    out=[];seen=set()
+    for index,match in enumerate(matches):
+        title,url=match.groups()
+        url=url.split("?")[0]
+        if url in seen:
+            continue
+        end=matches[index+1].start() if index+1<len(matches) else len(markdown)
+        block=markdown[match.end():min(end,match.end()+7500)]
+        km_match=re.search(r"mileage\s+(\d{1,3}(?:[ .]\d{3})*|\d+)\s*km",block,re.I)
+        year_match=re.search(r"first_registration_year\s+(20\d{2})",block,re.I)
+        price_match=re.search(r"###\s*(\d{1,3}(?:[ .]\d{3})+)\s*EUR\b",block,re.I)
+        if not (km_match and year_match and price_match):
+            continue
+        km=int(re.sub(r"\D","",km_match.group(1)))
+        year=int(year_match.group(1))
+        price=int(re.sub(r"\D","",price_match.group(1)))
+        if not (2010<=year<=2030 and 0<=km<1000000 and 3000<=price<=1000000):
+            continue
+        if validate and not query_matches_text(query,title,title+" "+block[:650]):
+            continue
+        seen.add(url)
+        out.append({
+            "source_key":"standvirtual","source":"Standvirtual — benchmark","official":False,
+            "title":title,"snippet":f"{year} · {km:,} km".replace(",","."),
+            "url":url,"condition":"used","availability":"",
+            "price_eur":float(price),"list_price_eur":None,
+            "discount_eur":None,"discount_pct":None,"conditional_price_eur":None,
+            "price_condition":"","mileage_km":km,"year":year,"dealer":"",
+            "discovery":"reader_fallback",
+        })
+        if len(out)>=limit:
+            break
+    return out
+
+
+def _reader_rows(route,query,timeout=8,limit=50,validate=True):
+    response=requests.get("https://r.jina.ai/"+route,headers=HEADERS,timeout=(3,timeout))
+    response.raise_for_status()
+    return _parse_reader_page(response.text,query,limit=limit,validate=validate)
+
+
 def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3):
     route=_route_for_query(query)
     if not route:return []
@@ -113,7 +167,8 @@ def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3):
             r=requests.get(route,params=params,headers=HEADERS,timeout=timeout)
             r.raise_for_status()
         except Exception:
-            if page==1: raise
+            if page==1:
+                return _reader_rows(route,query,timeout=8,limit=limit,validate=validate)
             break
         soup=BeautifulSoup(r.text,"html.parser")
         page_urls=set()
