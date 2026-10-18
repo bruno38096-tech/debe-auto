@@ -10,9 +10,12 @@ import requests
 URL = "https://bmwpremiumselection.bmw.pt/carros-usados/bmw-serie-3/330e-touring/"
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/plain", "X-Return-Format": "markdown"}
 
+# Reader Markdown places an optional quoted offer ID after the URL and often
+# wraps thumbnails in nested image links. Match the real URL independently
+# of the link label and use the last anchor for each offer card.
 _OFFER = re.compile(
-    r"\[([^\]\n]{4,180})\]\((https?://(?:www\.)?bmwpremiumselection\.bmw\.pt/"
-    r"[^\s)]+/bmw-serie-3-330e-touring/(\d{6,})/?)\)",
+    r"(https?://(?:www\\.)?bmwpremiumselection\\.bmw\\.pt/"
+    r"[^\\s)\\\"]+/bmw-serie-3-330e-touring/(\\d{6,})/?)",
     re.I,
 )
 _FACTS = re.compile(
@@ -29,19 +32,20 @@ def money(value):
 
 def parse_bmw_reader(markdown):
     """Extract independently clickable offers from reader Markdown, not category links."""
-    offers = list(_OFFER.finditer(markdown or ""))
+    matches = list(_OFFER.finditer(markdown or ""))
+    # The last linked thumbnail/title for an offer is nearest its price and km.
+    last_by_id = {}
+    for match in matches:
+        last_by_id[match.group(2)] = match
+    offers = sorted(last_by_id.values(), key=lambda item: item.start())
     out = []
     seen = set()
     for index, match in enumerate(offers):
-        title, link, offer_id = match.groups()
+        link, offer_id = match.groups()
         if offer_id in seen:
             continue
-        if "330e" not in re.sub(r"\s+", "", title.lower()):
-            continue
-        if "touring" not in title.lower():
-            continue
         limit = offers[index + 1].start() if index + 1 < len(offers) else len(markdown)
-        text = markdown[match.end():min(limit, match.end() + 9000)]
+        text = markdown[match.end():min(limit, match.end() + 10000)]
         facts = _FACTS.search(text[:1500])
         price_match = _PRICE.search(text[:2300])
         if not facts or not price_match:
