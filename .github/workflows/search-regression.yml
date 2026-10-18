@@ -9,7 +9,7 @@ on:
 jobs:
   search-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,6 +26,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_standvirtual_reader.py' -v
           python -m unittest discover -s tests -p 'test_catalog_matrix.py' -v
           python -m unittest discover -s tests -p 'test_search_catalog_contract.py' -v
+          python -m unittest discover -s tests -p 'test_inventory_cache.py' -v
 
       - name: Validate Search JavaScript syntax
         run: |
@@ -39,3 +40,16 @@ jobs:
           pathlib.Path("/tmp/debe-search.js").write_text(match.group(1),encoding="utf-8")
           PY
           node --check /tmp/debe-search.js
+
+      - name: Generate sampled inventory from public listings
+        env:
+          DEBE_INVENTORY_LIMIT: '15'
+        run: |
+          python scripts/refresh_search_inventory.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          obj=json.loads(Path('search_poc/inventory_snapshot.json').read_text())
+          print("SNAPSHOT_PROOF",obj['model_count'],obj['models_fresh'],obj['vehicle_count'],flush=True)
+          if not obj['vehicle_count']:raise SystemExit("No cached verified offers")
+          PY
