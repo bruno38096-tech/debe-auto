@@ -59,7 +59,12 @@ def spec_matches(make="",model="",variant="",body="all",row=None):
         return False
 
     wanted_model=norm(model)
-    if not contains(identity,wanted_model):
+    model_matched=contains(identity,wanted_model)
+    if not model_matched and wanted_model.endswith(" etron"):
+        # Manufacturer titles interpose the body name: A6 Avant e-tron.
+        base=wanted_model[:-6]
+        model_matched=contains(identity,base) and contains(identity,"etron")
+    if not model_matched:
         # BMW stock titles sometimes omit "Série 3" and show "BMW 330e".
         if not (brand=="bmw" and re.fullmatch(r"serie [1-5]",wanted_model)
                 and re.search(r"\b"+re.escape(wanted_model[-1])+r"\d{2}[a-z]\b",identity)):
