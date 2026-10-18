@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from search_poc.models import Vehicle
 from search_poc.query_validation import query_matches_text
+from search_poc.vehicle_identity import marketplace_model_route, spec_matches
 
 BASE="https://www.standvirtual.com"
 HEADERS={
@@ -190,8 +191,9 @@ def _reader_rows(route,query,timeout=8,limit=50,validate=True):
     return _parse_reader_page(response.text,query,limit=limit,validate=validate)
 
 
-def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3):
-    route=_route_for_query(query)
+def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3,
+                  make="",model="",body="all"):
+    route=marketplace_model_route(make,model,body) if make and model else _route_for_query(query)
     if not route:return []
     by_url={}
     for page in range(1,max_pages+1):
@@ -201,7 +203,8 @@ def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3):
             r.raise_for_status()
         except Exception:
             if page==1:
-                return _reader_rows(route,query,timeout=8,limit=limit,validate=validate)
+                return _reader_rows(route,query,timeout=8,limit=limit,
+                                    validate=False if make and model else validate)
             break
         soup=BeautifulSoup(r.text,"html.parser")
         page_urls=set()
@@ -227,7 +230,9 @@ def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3):
                 "mileage_km":_km(text),"year":_year(text),"dealer":_dealer(card),
                 "discovery":"marketplace_direct",
             }
-            if validate and not query_matches_text(query,candidate["title"],candidate["snippet"]):
+            if make and model:
+                if not spec_matches(make,model,"",body,candidate):continue
+            elif validate and not query_matches_text(query,candidate["title"],candidate["snippet"]):
                 continue
             old=by_url.get(url)
             if old is None or len(candidate["title"])>len(old.get("title","")):
