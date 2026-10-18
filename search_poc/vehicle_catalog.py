@@ -142,6 +142,8 @@ def _clean_variant(model, variant):
     variant=(variant or "").strip()
     if not variant:
         return ""
+    if model and variant.lower().startswith("amg "+model.lower()+" "):
+        return "AMG "+variant[len("AMG " + model + " "):].strip()
     if model and variant.lower().startswith(model.lower()+" "):
         return variant[len(model):].strip()
     return variant

@@ -72,7 +72,7 @@ def api_search():
     if not q:
         return jsonify({"ok": False, "error": "Pesquisa inválida"}), 400
 
-    payload = search_all(q, condition=condition, max_per_source=3)
+    payload = search_all(q, condition=condition, max_per_source=3, make=make,model=model,variant=variant,body=body)
     payload["display_query"] = " · ".join(x for x in (make, model, variant) if x) if make else q
     payload["selectors"] = {"make": make, "model": model, "variant": variant, "body": body}
     payload["feature"] = "search-beta"

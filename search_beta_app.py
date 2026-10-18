@@ -199,8 +199,12 @@ function render(d){
   if(!(d.results||[]).length){
     const sourceLinks=(d.source_links||[]).filter(x=>x.url&&/^https:\/\//.test(x.url));
     const links=sourceLinks.slice(0,8).map(x=>'<a target="_blank" rel="noopener" href="'+esc(x.url)+'">Consultar '+esc(x.name)+' →</a>').join('');
-    const message=d.partial?'Algumas fontes não responderam dentro do prazo. Nenhum anúncio foi confirmado nesta passagem.':'Nenhum anúncio individual foi confirmado nesta pesquisa. Isto não prova falta de stock.';
-    document.getElementById('results').innerHTML='<div class="notice" style="grid-column:1/-1">'+esc(message)+(links?'<p>Consulta diretamente as fontes relevantes (os links abrem os respetivos portais; não são anúncios verificados):</p><div class="sourceFallback">'+links+'</div>':'')+'</div>';
+    const alternativeRows=(d.alternatives||[]).slice(0,5).filter(x=>x.url&&/^https:\/\//.test(x.url));
+    const alternatives=alternativeRows.map(x=>'<div class="card" style="min-height:0"><div class="title">'+esc(x.title)+'</div><div class="source">'+esc(x.source)+'</div><div class="price">'+eur(x.price_eur)+'</div><div class="querymeta">'+esc([x.year,x.mileage_km!=null?new Intl.NumberFormat('pt-PT').format(x.mileage_km)+' km':''].filter(Boolean).join(' · '))+'</div><a class="open" href="'+esc(x.url)+'" rel="noopener" target="_blank">Abrir este anúncio →</a></div>').join('');
+    const headline='<strong>Nenhum anúncio confirmado para a motorização / versão selecionada.</strong>';
+    const message=' O DEBE não encontrou um veículo que corresponda exatamente à pesquisa. Isto não significa que só esteja disponível por encomenda. Verifica na marca a possibilidade de encomendar novo e os prazos.';
+    const extra=d.partial?'<p>Algumas fontes não responderam. A disponibilidade não pôde ser verificada em todo o mercado.</p>':'';
+    document.getElementById('results').innerHTML='<div class="notice" style="grid-column:1/-1">'+headline+esc(message)+extra+(links?'<p>Consultar stock ou possibilidade de encomenda nas fontes:</p><div class="sourceFallback">'+links+'</div>':'')+'</div>'+(alternatives?'<div style="grid-column:1/-1" class="querytitle">Outras motorizações do mesmo modelo — não correspondem à versão pedida</div>'+alternatives:'');
     return;
   }
   document.getElementById('results').innerHTML=d.results.map(x=>{
@@ -240,7 +244,7 @@ def api_search():
     if condition not in set(CONDITION_LABELS)|{"all"}: condition="all"
     if not q and make and model:
         q=canonical_query(make,model,variant,body)
-    payload=search_all(q,condition=condition,max_per_source=3)
+    payload=search_all(q,condition=condition,max_per_source=3,make=make,model=model,variant=variant,body=body)
     payload["display_query"]=" · ".join(x for x in (make,model,variant) if x) if make else q
     payload["selectors"]={"make":make,"model":model,"variant":variant,"body":body}
     return jsonify(payload)

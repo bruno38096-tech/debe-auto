@@ -24,3 +24,18 @@ jobs:
           python -m unittest discover -s tests -p 'test_search_regression.py' -v
           python -m unittest discover -s tests -p 'test_bmw_reader_fallback.py' -v
           python -m unittest discover -s tests -p 'test_standvirtual_reader.py' -v
+          python -m unittest discover -s tests -p 'test_catalog_matrix.py' -v
+          python -m unittest discover -s tests -p 'test_search_catalog_contract.py' -v
+
+      - name: Validate Search JavaScript syntax
+        run: |
+          python - <<'PY'
+          import pathlib,re
+          source=pathlib.Path("search_beta_app.py").read_text(encoding="utf-8")
+          html=re.search(r"HTML=r'''(.*?)'''",source,re.S)
+          if not html:raise SystemExit("Missing Search HTML template")
+          match=re.search(r"<script>(.*?)</script>",html.group(1),re.S)
+          if not match:raise SystemExit("Missing Search JavaScript")
+          pathlib.Path("/tmp/debe-search.js").write_text(match.group(1),encoding="utf-8")
+          PY
+          node --check /tmp/debe-search.js
