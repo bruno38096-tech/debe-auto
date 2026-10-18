@@ -24,3 +24,4 @@ jobs:
           python -m unittest discover -s tests -p 'test_search_regression.py' -v
           python -m unittest discover -s tests -p 'test_bmw_reader_fallback.py' -v
           python -m unittest discover -s tests -p 'test_standvirtual_reader.py' -v
+          python -m unittest discover -s tests -p 'test_catalog_matrix.py' -v
