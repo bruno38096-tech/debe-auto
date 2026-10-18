@@ -23,3 +23,31 @@ jobs:
         run: |
           python -m unittest discover -s tests -p 'test_search_regression.py' -v
           python -m unittest discover -s tests -p 'test_bmw_reader_fallback.py' -v
+
+      - name: Live search smoke test (BMW and Audi)
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python - <<'PY'
+          import requests, time, sys
+          base='https://debe-search-beta.onrender.com/search-beta/api/search'
+          examples=[
+              dict(make='BMW', model='Série 3', variant='330e', body='station', condition='all'),
+              dict(make='Audi', model='A6 e-tron', variant='', body='station', condition='all'),
+          ]
+          failures=[]
+          for params in examples:
+              t=time.monotonic()
+              response=requests.get(base,params=params,timeout=50)
+              print("URL",response.url,"HTTP",response.status_code,"elapsed",round(time.monotonic()-t,1),flush=True)
+              response.raise_for_status()
+              data=response.json()
+              print("QUERY",data.get('query'),"RESULTS",data.get('summary',{}).get('total'),
+                    "SOURCE_STATS",[(v['key'],v.get('count'),v.get('status')) for v in data.get('sources',[])],
+                    "PARTIAL",data.get('partial'),flush=True)
+              if not data.get('results'):
+                  failures.append(params['make']+' '+params['model'])
+          if failures:
+              print("EMPTY REAL SEARCHES: "+", ".join(failures),flush=True)
+              sys.exit(1)
+          PY
