@@ -20,4 +20,6 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall -q app.py search_beta_app.py search_poc
       - name: Run Search regression tests
-        run: python -m unittest discover -s tests -p 'test_search_regression.py' -v
+        run: |
+          python -m unittest discover -s tests -p 'test_search_regression.py' -v
+          python -m unittest discover -s tests -p 'test_bmw_reader_fallback.py' -v
