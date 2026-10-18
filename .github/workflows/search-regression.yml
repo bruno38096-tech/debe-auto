@@ -9,7 +9,7 @@ on:
 jobs:
   search-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,6 +27,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_catalog_matrix.py' -v
           python -m unittest discover -s tests -p 'test_search_catalog_contract.py' -v
           python -m unittest discover -s tests -p 'test_inventory_cache.py' -v
+          python -m unittest discover -s tests -p 'test_inventory_enrichment.py' -v
 
       - name: Validate Search JavaScript syntax
         run: |
@@ -41,3 +42,26 @@ jobs:
           PY
           node --check /tmp/debe-search.js
 
+
+      - name: Probe supplemental stock for BMW and Mercedes
+        run: |
+          python - <<'PY'
+          from scripts.refresh_search_inventory import harvest
+          from search_poc.vehicle_identity import spec_matches
+          tests=[
+            ("BMW","Série 3","330e","station"),
+            ("Mercedes-Benz","GLC","GLC 300 e","suv"),
+            ("Porsche","911","Carrera","coupe")
+          ]
+          failures=[]
+          for make,model,variant,body in tests:
+            _,rows=harvest((make,model))
+            matching=[r for r in rows if spec_matches(make,model,variant,body,r)]
+            print("ENRICH_PROBE",make,model,variant,
+              "raw",len(rows),"exact",len(matching),
+              "examples",[(r["title"],r["url"],r.get("official")) for r in matching[:3]],flush=True)
+            if make in ("BMW","Mercedes-Benz") and not matching:
+              failures.append(make+" "+model)
+          if failures:
+            raise SystemExit("Missing enrichment: "+", ".join(failures))
+          PY
