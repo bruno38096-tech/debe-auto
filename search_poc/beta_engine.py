@@ -861,6 +861,6 @@ def search_all(q, condition="all", max_per_source=3):
         "rejected_irrelevant":sum(rejected_by_source.values()),
         "rejected_incomplete":sum(incomplete_by_source.values()),
     }
-    payload={"query":q,"condition":condition,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary[\x27sources_checked\x27]} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
+    payload={"query":q,"condition":condition,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary['sources_checked']} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
     with _cache_lock:_cache[cache_key]=(now,payload)
     return payload
