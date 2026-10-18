@@ -168,12 +168,16 @@
     const model = $('model').value.trim(), year = $('year').value.trim(), price = $('price').value.trim(), km = $('km').value.trim(), fuel = $('fuel').value.trim(), vin = $('vin').value.trim();
     const y = parseInt(year, 10) || 0, k = parseInt(km.replace(/\D/g, ''), 10) || 0, age = Math.max(0, new Date().getFullYear() - y), annual = k / Math.max(1, age || 1);
     const ageScore = Math.max(25, Math.min(98, 100 - age * 2.4)), annualScore = Math.max(25, Math.min(98, 100 - (annual / 1000) * 2.2)), mileageScore = Math.max(20, Math.min(98, 100 - (k / 1000) * 0.18));
-    const preliminaryScore = (!y || !k) ? (vin.length === 17 ? 68 : 64) : Math.max(25, Math.min(95, Math.round(ageScore * 0.35 + annualScore * 0.35 + mileageScore * 0.25 + (vin.length === 17 ? 5 : 0))));
+    const preliminaryScore = Math.max(25, Math.min(95, Math.round(ageScore * 0.35 + annualScore * 0.35 + mileageScore * 0.30)));
 
+    if (!model || !Number.isFinite(y) || y < 1990 || y > new Date().getFullYear() + 1 || !km.trim() || !/^\\s*[\\d\\s.,]+\\s*(?:km)?\\s*$/i.test(km)) {
+      alert('Para calcular um score válido, confirma o modelo, o ano e a quilometragem do anúncio.');
+      return;
+    }
     sendEvent('report_started', {marketplace:marketplaceFrom(currentUrl), model, year});
     setBusy('report', true); $('score').textContent = preliminaryScore;
     $('rating').textContent = preliminaryScore >= 80 ? 'Bom candidato' : preliminaryScore >= 65 ? 'Interessante, validar' : preliminaryScore >= 50 ? 'Cautela' : 'Risco elevado';
-    $('scoreText').textContent = 'Score preliminar baseado no ano, quilometragem, utilização anual e dados disponíveis no anúncio.';
+    $('scoreText').textContent = 'Score técnico preliminar: idade e quilometragem. Não avalia o preço, o estado real ou o histórico do veículo; requer inspeção.';
     $('carTitle').textContent = model + ' — ' + year; $('carMeta').textContent = [price, km, fuel, listing.engine].filter(Boolean).join(' · ');
     setListingPhoto(currentUrl.toLowerCase().includes('olx.pt') ? '' : (listing.image || '')); $('report').classList.remove('hidden');
     $('strengths').innerHTML = '<span class="muted">A pesquisar…</span>'; $('issues').innerHTML = '<span class="muted">A pesquisar…</span>'; $('checks').innerHTML = '<span class="muted">A pesquisar…</span>'; $('deals').innerHTML = '<span class="muted">A procurar negócios comparáveis…</span>'; $('report').scrollIntoView({behavior:'smooth'});
@@ -189,4 +193,14 @@
       sendEvent('report_completed', {marketplace:marketplaceFrom(currentUrl), model, year, score:preliminaryScore, research_ok:researchOk, comparables:marketCount});
     }
   };
+  // Handle verified hand-off from DEBE Search. Prefill and open the listing
+  // workflow only after the click handler above has been registered.
+  try {
+    const analyseParam = new URLSearchParams(location.search).get('analyse');
+    const analyseUrl = safeUrl(analyseParam || '');
+    if (analyseUrl) {
+      $('url').value = analyseUrl;
+      setTimeout(() => $('analyse').click(), 0);
+    }
+  } catch (_) {}
 })();
