@@ -7,7 +7,7 @@ import re
 from urllib.parse import urlparse
 import requests
 
-URL = "https://bmwpremiumselection.bmw.pt/carros-usados/bmw-serie-3/330e-touring/"
+URL = "https://bmwpremiumselection.bmw.pt/serie-3/330e-touring/"
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/plain", "X-Return-Format": "markdown"}
 
 # Reader Markdown places an optional quoted offer ID after the URL and often
