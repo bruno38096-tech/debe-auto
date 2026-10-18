@@ -18,7 +18,7 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Check Python syntax
-        run: python -m compileall -q app.py search_beta_app.py search_poc
+        run: python -m compileall -q app.py search_beta_app.py search_poc scripts
       - name: Run Search regression tests
         run: |
           python -m unittest discover -s tests -p 'test_search_regression.py' -v
@@ -26,6 +26,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_standvirtual_reader.py' -v
           python -m unittest discover -s tests -p 'test_catalog_matrix.py' -v
           python -m unittest discover -s tests -p 'test_search_catalog_contract.py' -v
+          python -m unittest discover -s tests -p 'test_inventory_cache.py' -v
 
       - name: Validate Search JavaScript syntax
         run: |
@@ -39,3 +40,4 @@ jobs:
           pathlib.Path("/tmp/debe-search.js").write_text(match.group(1),encoding="utf-8")
           PY
           node --check /tmp/debe-search.js
+
