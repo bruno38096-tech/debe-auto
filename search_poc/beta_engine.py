@@ -613,16 +613,17 @@ def _direct_specials(q):
     results=[]
     pool=ThreadPoolExecutor(max_workers=min(8,len(tasks)))
     try:
-        futures=[pool.submit(fn) for fn in tasks]
+        futures={pool.submit(fn):fn.__name__ for fn in tasks}
         # A slow marketplace paginating three pages must not erase already
         # completed BMW, Mercedes or dealer feed results.
-        done,pending=wait(futures,timeout=12)
+        done,pending=wait(futures,timeout=13)
         for future in done:
             try:
                 results.extend(future.result() or [])
             except Exception as exc:
                 logging.getLogger(__name__).warning(
-                    "DEBE direct connector failed: %s",type(exc).__name__)
+                    "DEBE direct connector %s failed: %s",
+                    futures[future],str(exc)[:180])
         for future in pending:
             future.cancel()
         if pending:
@@ -812,7 +813,7 @@ def search_all(q, condition="all", max_per_source=3):
     # search indexes are slow. Pending discoveries never block the request.
     direct_job=_search_executor.submit(_direct_specials,q)
     jobs={_search_executor.submit(_source_query,q,src,max_per_source,4):src for src in selected_sources}
-    done,pending=wait([direct_job,*jobs],timeout=22)
+    done,pending=wait([direct_job,*jobs],timeout=17)
     for fut,src in jobs.items():
         if fut in pending:
             statuses.append({"key":src["key"],"name":src["name"],"count":0,"status":"timeout",
