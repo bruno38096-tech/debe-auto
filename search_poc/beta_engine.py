@@ -5,7 +5,7 @@ It queries public indexed inventory pages concurrently and normalizes the
 results into one format. Dedicated direct connectors are used when available.
 """
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 from bs4 import BeautifulSoup
 import html, re, time, threading, requests, unicodedata, logging
 
@@ -428,6 +428,39 @@ def _source_query(q, source, limit=3, timeout=8):
         hits=sum(1 for x in core if x in hay or re.sub(r"[^a-z0-9]","",x) in compact)
         need=1 if len(core)<=2 else max(1,len(core)-1)
         return (not core) or hits>=need
+
+    # Bing RSS indexes can return only category pages. DuckDuckGo's public
+    # HTML results provide a second independent discovery path for dealers.
+    # Use it only when the first source gives no vehicle-specific hit.
+    if not any(_plausible(item) for item in items):
+        try:
+            for alias in _query_aliases(q)[:2]:
+                ddg_url="https://html.duckduckgo.com/html/?q="+quote_plus(f"site:{domain} {alias}")
+                response=requests.get(ddg_url,headers=HEADERS,timeout=(2,4))
+                response.raise_for_status()
+                soup=BeautifulSoup(response.text,"html.parser")
+                for entry in soup.select(".result"):
+                    link_tag=entry.select_one(".result__a")
+                    if not link_tag:
+                        continue
+                    href=link_tag.get("href","")
+                    redirect=parse_qs(urlparse(href).query).get("uddg")
+                    link=unquote(redirect[0]) if redirect else href
+                    if not link.startswith("http") or domain not in urlparse(link).netloc.lower():
+                        continue
+                    title=clean(link_tag.get_text(" ",strip=True))
+                    snippet_tag=entry.select_one(".result__snippet")
+                    desc=clean(snippet_tag.get_text(" ",strip=True) if snippet_tag else "")
+                    candidate=(title,desc,link)
+                    if _plausible(candidate) and not any(old[2]==link for old in items):
+                        items.append(candidate)
+                    if len([x for x in items if _plausible(x)])>=limit:
+                        break
+                if any(_plausible(item) for item in items):
+                    break
+        except Exception as exc:
+            if not error:
+                error=str(exc)[:120]
 
     # Use sitemap discovery only when indexed results contain no plausible
     # vehicle match. This fixes the old "non-empty but irrelevant" blind spot
