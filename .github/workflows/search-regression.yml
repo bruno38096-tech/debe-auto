@@ -64,3 +64,34 @@ jobs:
           if len({v['url'] for v in seen})<2:
               raise SystemExit('Insufficient live Audi A5 e-hybrid adverts retrieved')
           PY
+
+      - name: Confirm live Audi A5 e-hybrid and mobile UI
+        run: |
+          python - <<'PY'
+          import requests,time
+          from search_poc.vehicle_identity import spec_matches
+          origin='https://debe-search-beta.onrender.com/search-beta/'
+          html=requests.get(origin,timeout=30)
+          html.raise_for_status()
+          for snippet in ('Encontra o carro certo.','Audi A5 e-hybrid','id="sort"','Pesquisar carros','Analisar anúncio'):
+            assert snippet in html.text,snippet
+          endpoint=origin+'api/search'
+          cases=[
+            dict(make='Audi',model='A5',variant='e-hybrid',body='all',condition='all'),
+            dict(make='Audi',model='A5',variant='e-hybrid',body='station',condition='all'),
+            dict(make='BMW',model='Série 3',variant='330e',body='station',condition='all'),
+            dict(make='Mercedes-Benz',model='GLC',variant='GLC 300 e',body='suv',condition='all'),
+          ]
+          for params in cases:
+            start=time.monotonic()
+            r=requests.get(endpoint,params=params,timeout=45)
+            r.raise_for_status()
+            payload=r.json()
+            rows=payload.get('results',[])
+            invalid=[x.get('title') for x in rows if not spec_matches(params['make'],params['model'],params['variant'],params['body'],x)]
+            print('PRODUCTION_A5_SMOKE',params,'count',len(rows),'seconds',round(time.monotonic()-start,1),
+              'invalid',invalid,'dated',sum(bool(x.get('observed_at')) for x in rows),
+              'sample',[(x.get('title'),x.get('price_eur'),x.get('url')) for x in rows[:3]],flush=True)
+            assert not invalid,'Incorrect powertrain'
+            assert len(rows)>=2,'No relevant adverts for selected engine'
+          PY
