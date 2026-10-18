@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 def norm(text):
     value=unicodedata.normalize("NFKD",str(text or "")).encode("ascii","ignore").decode().lower()
+    value=re.sub(r"\be[- ]+(208|308|3008|5008)\b",r"e\1",value)
     value=re.sub(r"\b(\d{3})\s+(de|e|d|i)\b",r"\1\2",value)
     value=re.sub(r"\b([xs])drive\s*(\d{2}[a-z0-9]+)\b",r"\1drive\2",value)
     value=re.sub(r"\b([qx])\s+(\d)\b",r"\1\2",value)
