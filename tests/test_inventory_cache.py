@@ -53,7 +53,7 @@ class InventoryCacheTests(unittest.TestCase):
 
     def test_cache_does_not_turn_glc_300_into_amg_63(self):
         snapshot={**EXAMPLE,"observed_at":datetime.now(timezone.utc).isoformat()}
-        with patch("search_poc.beta_engine.model_inventory",return_value=[snapshot]),\
+        with patch("search_poc.beta_engine._direct_specials",return_value=[snapshot]),\
              patch("search_poc.beta_engine._relevant_sources",return_value=[]):
             response=search_all("Mercedes-Benz GLC AMG 63 SUV",
                     make="Mercedes-Benz",model="GLC",variant="AMG GLC 63",body="suv")
