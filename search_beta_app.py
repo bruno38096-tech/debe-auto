@@ -23,6 +23,17 @@ HTML=r'''<!doctype html>
 .advanced details{margin-top:11px}.advanced summary{cursor:pointer;color:#a8b9d6;font-size:13px;user-select:none}.advanced .advrow{display:grid;grid-template-columns:1fr 150px;gap:10px;margin-top:9px}.advanced button{border:1px solid #36445b;background:#172033;color:#eaf0fa;border-radius:10px;font-weight:750;cursor:pointer}
 .summarybar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 0 10px}.querytitle{font-size:20px;font-weight:820}.querymeta{color:var(--muted);font-size:13px}
 .stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:10px 0 16px}.stat{padding:13px 14px;background:var(--panel);border:1px solid var(--line);border-radius:13px}.stat b{font-size:21px}.stat span{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.searchSpinner{height:26px;width:26px;flex:0 0 26px;border-radius:50%;border:3px solid #304567;border-top-color:#98bfff;animation:debeSpin .75s linear infinite}
+@keyframes debeSpin{to{transform:rotate(360deg)}}
+@keyframes debeMove{from{background-position:100% 0}to{background-position:-100% 0}}
+.loadingBox{display:flex;align-items:center;justify-content:center;gap:15px;max-width:570px;margin:auto;text-align:left}
+.loadingBox strong{display:block;color:#edf4ff;font-size:15px}
+.loadingBox span{display:block;color:#9eb1cb;font-size:12px}
+.loadingTrack{height:5px;max-width:570px;margin:17px auto 0;border-radius:20px;background:linear-gradient(100deg,#253349 5%,#557ff6 42%,#80c1ff 50%,#253349 90%);background-size:250% 100%;animation:debeMove 1.8s ease-in-out infinite}
+.searchbtn:disabled,.advanced button:disabled{opacity:.65;cursor:wait}
+.sourceFallback{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
+.sourceFallback a{display:block;padding:11px 13px;border:1px solid #3d4f68;border-radius:10px;text-decoration:none;color:#e1ecff;background:#17253b;font-weight:700}
+@media(max-width:620px){.sourceFallback{grid-template-columns:1fr}}
 .notice{padding:11px 13px;border:1px solid #32425d;background:#111a29;border-radius:11px;color:#b6c5db;margin:12px 0;font-size:13px}.loader{padding:45px;text-align:center;color:var(--muted)}
 .results{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.card{background:linear-gradient(180deg,#131a26,#101620);border:1px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;min-height:225px}.cardtop{display:flex;gap:12px;justify-content:space-between}.title{font-size:17px;font-weight:800;line-height:1.25}.source{font-size:12px;color:#9fb0c8;margin-top:4px}.pricebox{text-align:right;min-width:120px}.price{font-size:21px;font-weight:880;white-space:nowrap}.old{text-decoration:line-through;color:#7e8b9d;font-size:12px}.discount{display:inline-block;background:var(--goodbg);color:#62e6a0;padding:3px 7px;border-radius:7px;font-size:12px;font-weight:800;margin-top:3px}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin:13px 0}.tag{font-size:12px;border:1px solid #334058;background:#121a27;color:#c5d0df;border-radius:999px;padding:4px 8px}.tag.primary{border-color:#3d5f90;background:#17253a;color:#cfe0ff}.snippet{color:var(--muted);font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-bottom:12px}.open{margin-top:auto;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;background:#e9f0ff;color:#111827;border-radius:10px;padding:10px 12px;font-weight:850;width:max-content}
@@ -56,7 +67,7 @@ HTML=r'''<!doctype html>
 <div class="summarybar"><div><div id="querytitle" class="querytitle">Resultados</div><div id="querymeta" class="querymeta"></div></div></div>
 <div id="notice" class="notice">Seleciona um carro para pesquisar simultaneamente nas fontes nacionais.</div>
 <div id="stats" class="stats"></div>
-<div id="loading" class="loader hidden">A cruzar marketplaces, stock oficial e concessionários. A primeira pesquisa pode demorar alguns segundos…</div>
+<div id="loading" class="loader hidden" role="status" aria-live="polite"><div class="loadingBox"><div class="searchSpinner" aria-hidden="true"></div><div><strong id="loadingTitle">A pesquisar anúncios…</strong><span id="loadingDetail">A consultar concessionários, stock oficial e marketplaces · <span id="elapsed">0 s</span></span></div></div><div class="loadingTrack" aria-hidden="true"></div></div>
 <div id="results" class="results"></div>
 <details class="sourcesbox"><summary>Ver fontes consultadas</summary><div id="sources" class="sources"></div></details>
 <div class="foot">Beta técnico: algumas fontes já usam conetor direto; outras dependem temporariamente de descoberta pública indexada. Preço e disponibilidade devem ser confirmados no anúncio original.</div>
@@ -64,6 +75,7 @@ HTML=r'''<!doctype html>
 
 <script>
 let catalog=null;
+let elapsedTimer=null, startedAt=0, activeSearchId=0, searchController=null;
 const eur=v=>v==null?'Preço sob consulta':new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v);
 const esc=s=>String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const condLabel={new_stock:'Novo / stock imediato',demo_service:'Serviço / demo',km0:'KM0 / seminovo',used_certified:'Usado certificado',used:'Usado',unknown:'Por classificar'};
@@ -87,7 +99,28 @@ async function init(){
   document.getElementById('advbtn').addEventListener('click',runAdvanced);
   runStructured();
 }
-function setBusy(on){document.getElementById('loading').classList.toggle('hidden',!on);if(on){document.getElementById('results').innerHTML='';document.getElementById('sources').innerHTML='';document.getElementById('stats').innerHTML=''}}
+function setBusy(on){
+  document.getElementById('loading').classList.toggle('hidden',!on);
+  const primary=document.querySelector('.searchbtn'), advanced=document.getElementById('advbtn');
+  primary.disabled=on;advanced.disabled=on;
+  primary.textContent=on?'A pesquisar…':'Pesquisar';
+  advanced.textContent=on?'A pesquisar…':'Pesquisar texto';
+  if(elapsedTimer!==null){clearInterval(elapsedTimer);elapsedTimer=null}
+  if(on){
+    startedAt=Date.now();
+    document.getElementById('elapsed').textContent='0 s';
+    elapsedTimer=setInterval(()=>{
+      const seconds=Math.floor((Date.now()-startedAt)/1000);
+      document.getElementById('elapsed').textContent=seconds+' s';
+      if(seconds>=8) document.getElementById('loadingTitle').textContent='A validar anúncios e preços…';
+    },1000);
+    document.getElementById('loadingTitle').textContent='A pesquisar anúncios…';
+    document.getElementById('notice').textContent='Pesquisa em curso. A aguardar resposta das fontes nacionais…';
+    document.getElementById('results').innerHTML='';
+    document.getElementById('sources').innerHTML='';
+    document.getElementById('stats').innerHTML='';
+  }
+}
 async function runStructured(e){
   if(e)e.preventDefault();
   const make=document.getElementById('make').value, model=document.getElementById('model').value, variant=document.getElementById('variant').value;
@@ -103,21 +136,28 @@ async function runAdvanced(){
   await fetchResults('/api/search?'+p.toString());
 }
 async function fetchResults(url){
+  const seq=++activeSearchId;
+  if(searchController)searchController.abort();
+  const controller=new AbortController();
+  searchController=controller;
   setBusy(true);
+  const timer=setTimeout(()=>controller.abort(),35000);
   try{
-    const controller=new AbortController();
-    const timer=setTimeout(()=>controller.abort(),70000);
     const r=await fetch(url,{signal:controller.signal});
-    clearTimeout(timer);
+    if(seq!==activeSearchId)return;
     if(!r.ok) throw new Error('Pesquisa temporariamente indisponível ('+r.status+').');
-    const text=await r.text();
-    if(!text) throw new Error('A pesquisa terminou sem resposta. Tenta novamente.');
-    const d=JSON.parse(text);render(d);
+    const d=await r.json();
+    if(seq===activeSearchId)render(d);
   }catch(e){
-    const msg=e.name==='AbortError'?'A pesquisa excedeu 70 segundos. Tenta novamente.':String(e.message||e);
+    if(seq!==activeSearchId)return;
+    const msg=e.name==='AbortError'?'A pesquisa excedeu 35 segundos. Experimenta reduzir os filtros.':String(e.message||e);
     document.getElementById('querymeta').textContent='Pesquisa não concluída';
+    document.getElementById('notice').textContent='Não foi possível concluir a consulta às fontes.';
     document.getElementById('results').innerHTML='<div class="notice">'+esc(msg)+'</div>';
-  }finally{setBusy(false)}
+  }finally{
+    clearTimeout(timer);
+    if(seq===activeSearchId){searchController=null;setBusy(false)}
+  }
 }
 function render(d){
   const s=d.summary||{};
@@ -135,7 +175,13 @@ function render(d){
     const tip=x.candidate_label?(' title="'+esc(x.candidate_label)+'"'):'';
     return '<div class="src"'+tip+'><span>'+esc(x.name)+'</span><span class="'+x.status+'">'+esc(value)+'</span></div>';
   }).join('');
-  if(!(d.results||[]).length){document.getElementById('results').innerHTML='<div class="notice">Não encontrei resultados nesta passagem. Em fontes ainda sem conetor direto, isto pode significar apenas que o stock não está indexado.</div>';return}
+  if(!(d.results||[]).length){
+    const sourceLinks=(d.source_links||[]).filter(x=>x.url&&/^https:\/\//.test(x.url));
+    const links=sourceLinks.slice(0,8).map(x=>'<a target="_blank" rel="noopener" href="'+esc(x.url)+'">Consultar '+esc(x.name)+' →</a>').join('');
+    const message=d.partial?'Algumas fontes não responderam dentro do prazo. Nenhum anúncio foi confirmado nesta passagem.':'Nenhum anúncio individual foi confirmado nesta pesquisa. Isto não prova falta de stock.';
+    document.getElementById('results').innerHTML='<div class="notice" style="grid-column:1/-1">'+esc(message)+(links?'<p>Consulta diretamente as fontes relevantes (os links abrem os respetivos portais; não são anúncios verificados):</p><div class="sourceFallback">'+links+'</div>':'')+'</div>';
+    return;
+  }
   document.getElementById('results').innerHTML=d.results.map(x=>{
     const tags=[condLabel[x.condition]||x.condition,x.year,x.mileage_km!=null?new Intl.NumberFormat('pt-PT').format(x.mileage_km)+' km':'',x.availability,x.dealer,(x.also_at&&x.also_at.length?'Também em '+x.also_at.join(', '):'')].filter(Boolean);
     const analyseHref='https://debe-auto.onrender.com/?analyse='+encodeURIComponent(x.url)+'#start';
