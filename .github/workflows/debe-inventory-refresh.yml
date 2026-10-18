@@ -1,5 +1,5 @@
 name: DEBE Search inventory refresh
-# Refresh now to incorporate BMW 330e and Mercedes GLC verified offer feeds.
+# Refresh now to incorporate Audi A5 Avant and Limousine e-hybrid offers.
 
 on:
   schedule:
