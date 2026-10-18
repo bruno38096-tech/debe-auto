@@ -1,0 +1,23 @@
+name: DEBE Search regression checks
+
+on:
+  push:
+    branches: [debe-search-poc]
+  pull_request:
+    branches: [debe-search-poc]
+
+jobs:
+  search-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Check Python syntax
+        run: python -m compileall -q app.py search_beta_app.py search_poc
+      - name: Run Search regression tests
+        run: python -m unittest discover -s tests -p 'test_search_regression.py' -v
