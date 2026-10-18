@@ -466,115 +466,121 @@ def _source_query(q, source, limit=3, timeout=8):
     return out,error
 
 def _direct_specials(q):
-    """Use the direct PoC connectors where the query matches their validated scope."""
-    out=[]
+    """Run independent direct inventory connectors concurrently.
+
+    A sequential chain of BMW/marketplace requests previously exceeded the
+    default Gunicorn worker timeout on a cold request.
+    """
     low=ascii_low(q)
-    if ("mercedes" in low and "glc" in low and ("300 e" in low or "300e" in low)):
-        try:
+    tasks=[]
+
+    if "mercedes" in low and "glc" in low and ("300 e" in low or "300e" in low):
+        def carclasse():
             from search_poc.connectors.carclasse import discover_glc_300e
+            rows=[]
             for v in discover_glc_300e(timeout=6):
-                d=v.to_dict(); d.update({
-                    "source_key":"carclasse","source":"Carclasse","official":True,
-                    "title":v.variant or "Mercedes-Benz GLC 300 e 4Matic",
-                    "snippet":f"{v.body or 'SUV'} · {v.year or ''} · {v.mileage_km or 0:,} km · Carclasse".replace(",","."),
-                    "dealer":"Carclasse","condition":v.condition,
-                    "availability":"Em stock","discovery":"direct_connector"
-                })
-                out.append(d)
-        except Exception:
-            pass
-        try:
+                d=v.to_dict()
+                d.update({"source_key":"carclasse","source":"Carclasse","official":True,
+                          "title":v.variant or "Mercedes-Benz GLC 300 e 4Matic",
+                          "snippet":f"{v.body or 'SUV'} · {v.year or ''} · {v.mileage_km or 0:,} km · Carclasse".replace(",","."),
+                          "dealer":"Carclasse","condition":v.condition,"availability":"Em stock",
+                          "discovery":"direct_connector"})
+                rows.append(d)
+            return rows
+        def mbcertified():
             from search_poc.connectors.mercedes_certified import discover_glc_300e_suv
+            rows=[]
             for v in discover_glc_300e_suv(timeout=4):
-                d=v.to_dict(); d.update({
-                    "source_key":"mercedes_certified","source":"Mercedes-Benz Certified","official":True,
-                    "title":"Mercedes-Benz GLC 300 e 4MATIC",
-                    "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),
-                    "condition":"used_certified","availability":"",
-                    "discovery":"direct_connector"
-                })
-                out.append(d)
-        except Exception:
-            pass
+                d=v.to_dict()
+                d.update({"source_key":"mercedes_certified","source":"Mercedes-Benz Certified",
+                          "official":True,"title":"Mercedes-Benz GLC 300 e 4MATIC",
+                          "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),
+                          "condition":"used_certified","availability":"","discovery":"direct_connector"})
+                rows.append(d)
+            return rows
+        tasks.extend((carclasse,mbcertified))
+
     if "bmw" in low and "330" in low and "touring" in low:
-        try:
+        def premium330():
             from search_poc.connectors.bmw_premium import fetch_bmw_330e_touring
+            rows=[]
             for v in fetch_bmw_330e_touring(timeout=9):
-                d=v.to_dict(); d.update({"source_key":"bmw_premium","source":"BMW Premium Selection","official":True,"title":f"BMW Série 3 {v.variant} Touring","snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),"dealer":v.dealer,"condition":"used_certified","availability":"","discovery":"direct_connector"})
-                out.append(d)
-        except Exception: pass
-        try:
+                d=v.to_dict()
+                d.update({"source_key":"bmw_premium","source":"BMW Premium Selection","official":True,
+                          "title":f"BMW Série 3 {v.variant} Touring",
+                          "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · {v.dealer}".replace(",","."),
+                          "dealer":v.dealer,"condition":"used_certified","availability":"",
+                          "discovery":"direct_connector"})
+                rows.append(d)
+            return rows
+        def bmcar330():
             from search_poc.connectors.bmcar import inventory_summary_bmw_330e_touring
             bm=inventory_summary_bmw_330e_touring(timeout=9)
+            rows=[]
             for v in bm["vehicles"]:
-                d=v.to_dict(); d.update({
-                    "source_key":"bmcar","source":"BMcar","official":True,
-                    "title":f"BMW Série 3 {v.variant}",
-                    "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · BMcar".replace(",","."),
-                    "condition":v.condition or "used","availability":"",
-                    "discovery":"direct_connector",
-                    "source_candidate_count":bm.get("candidate_count",0),
-                    "source_exact_count":bm.get("exact_count",0),
-                    "source_candidate_label":"Série 3 Touring híbridos no filtro BMcar",
-                })
-                out.append(d)
-        except Exception: pass
-        try:
+                d=v.to_dict()
+                d.update({"source_key":"bmcar","source":"BMcar","official":True,
+                          "title":f"BMW Série 3 {v.variant}",
+                          "snippet":f"{v.year or ''} · {v.mileage_km or 0:,} km · BMcar".replace(",","."),
+                          "condition":v.condition or "used","availability":"",
+                          "discovery":"direct_connector",
+                          "source_candidate_count":bm.get("candidate_count",0),
+                          "source_exact_count":bm.get("exact_count",0),
+                          "source_candidate_label":"Série 3 Touring híbridos no filtro BMcar"})
+                rows.append(d)
+            return rows
+        def caetano330():
             from search_poc.connectors.bmw_new_stock import caetano_330e_touring_stock
+            rows=[]
             for v in caetano_330e_touring_stock(timeout=9):
-                d=v.to_dict(); d.update({"source_key":"bmw_caetano_new","source":"BMW / Caetano — novos em stock","official":True,"title":"BMW 330e Touring novo em stock","snippet":"Stock confirmado no portal oficial do concessionário; preço final sob proposta quando não publicado.","condition":"new_stock","dealer":"Caetano","discovery":"direct_connector"})
-                out.append(d)
-        except Exception: pass
-    # BMW Premium Selection is also queried directly for BMW models outside
-    # the dedicated 330e connector. Row-level query validation rejects polluted
-    # manufacturer route/filter results (e.g. X1 xDrive25e on an xDrive30e URL).
-    if "bmw" in low and not ("330" in low and "touring" in low):
-        try:
-            from search_poc.connectors.bmw_premium_generic import discover_rows as bps_rows
-            out.extend(bps_rows(q,timeout=8))
-        except Exception:
-            pass
+                d=v.to_dict()
+                d.update({"source_key":"bmw_caetano_new","source":"BMW / Caetano — novos em stock",
+                          "official":True,"title":"BMW 330e Touring novo em stock",
+                          "snippet":"Stock confirmado no portal oficial do concessionário; preço final sob proposta quando não publicado.",
+                          "condition":"new_stock","dealer":"Caetano","discovery":"direct_connector"})
+                rows.append(d)
+            return rows
+        tasks.extend((premium330,bmcar330,caetano330))
 
-    # Volvo's national inventory is server-rendered and can be queried directly.
-    # Filter the full official stock with the same generic semantic validator used
-    # for marketplaces, so XC60 T6 does not leak T8/B5/etc.
+    if "bmw" in low and not ("330" in low and "touring" in low):
+        def premium_generic():
+            from search_poc.connectors.bmw_premium_generic import discover_rows
+            return discover_rows(q,timeout=8)
+        tasks.append(premium_generic)
+
     if "volvo" in low:
-        try:
+        def volvo():
             from search_poc.connectors.volvo_inventory import fetch_inventory
+            rows=[]
             for v in fetch_inventory(timeout=8,limit=160):
                 d=v.to_dict()
-                d.update({
-                    "source_key":"volvo_inventory",
-                    "source":"Volvo — Inventário Nacional",
-                    "official":True,
-                    "title":f"Volvo {v.model} {v.variant}".strip(),
-                    "snippet":f"{v.year or ''} · {int(v.electric_range_km or 0)} km autonomia elétrica · {v.availability or ''}",
-                    "condition":"new_stock",
-                    "dealer":"Volvo Portugal",
-                    "discovery":"direct_connector",
-                })
+                d.update({"source_key":"volvo_inventory","source":"Volvo — Inventário Nacional",
+                          "official":True,"title":f"Volvo {v.model} {v.variant}".strip(),
+                          "snippet":f"{v.year or ''} · {int(v.electric_range_km or 0)} km autonomia elétrica · {v.availability or ''}",
+                          "condition":"new_stock","dealer":"Volvo Portugal",
+                          "discovery":"direct_connector"})
                 if query_matches_row(q,d):
-                    out.append(d)
-        except Exception:
-            pass
+                    rows.append(d)
+            return rows
+        tasks.append(volvo)
 
-    # PiscaPisca exposes public server-rendered model pages. Query those
-    # directly instead of relying on search-engine indexing, then reuse the
-    # exact model/variant validation and cross-source deduplication.
-    try:
-        from search_poc.connectors.piscapisca import discover_rows as pp_rows
-        out.extend(pp_rows(q,limit=80,timeout=7,pages=2))
-    except Exception:
-        pass
-
-    # Standvirtual is queried directly from its public server-rendered model page.
-    # This is deliberately a benchmark source, not the canonical source of truth.
-    try:
+    def piscapisca():
+        from search_poc.connectors.piscapisca import discover_rows
+        return discover_rows(q,limit=80,timeout=7,pages=2)
+    def standvirtual():
         from search_poc.connectors.standvirtual import discover_rows
-        out.extend(discover_rows(q,limit=120,timeout=8))
-    except Exception:
-        pass
-    return out
+        return discover_rows(q,limit=120,timeout=8)
+    tasks.extend((piscapisca,standvirtual))
+
+    results=[]
+    with ThreadPoolExecutor(max_workers=min(8,len(tasks))) as pool:
+        futures=[pool.submit(fn) for fn in tasks]
+        for future in as_completed(futures):
+            try:
+                results.extend(future.result() or [])
+            except Exception:
+                pass
+    return results
 
 
 def _identity_codes_from_row(row):
