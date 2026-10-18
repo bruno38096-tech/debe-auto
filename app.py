@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote_plus, urljoin, urlparse, parse_qs, unquote
 from datetime import datetime
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from search_poc.integration import bp as search_beta_bp, search_beta_enabled
 
 app = Flask(__name__, static_folder='.')
@@ -355,56 +355,68 @@ def category_evidence(identity, relaxed, label, terms):
     confidence=min(100,35*len(domains)+12*min(3,len(set(term_hits))))
     return good,confidence
 
+
+# Bound external research so the HTTP worker never waits indefinitely for
+# third-party search engines. Results are evidence-based; missing evidence is
+# explicitly reported rather than fabricated.
+_research_executor = ThreadPoolExecutor(max_workers=14)
+
 def dynamic_research(model,engine,year,fuelv):
     base,identity,relaxed=research_identity(model,engine,year,fuelv)
-    issue_hits=[];strength_hits=[]
-    def run_issue(item):
-        label,terms,text,check=item
-        rows,conf=category_evidence(identity,relaxed,label,terms)
-        return label,text,check,rows,conf
-    with ThreadPoolExecutor(max_workers=6) as ex:
-        futs=[ex.submit(run_issue,i) for i in ISSUES]
-        for f in as_completed(futs):
-            label,text,check,rows,conf=f.result()
-            if rows and conf>=45:issue_hits.append((conf,label,text,check,rows))
-    for label,terms,text in STRENGTHS:
-        rows,conf=category_evidence(identity,relaxed,label,terms)
-        if rows and conf>=45:strength_hits.append((conf,label,text,rows))
-    issue_hits.sort(reverse=True,key=lambda x:x[0]);strength_hits.sort(reverse=True,key=lambda x:x[0])
+    futures={}
+    for item in ISSUES:
+        futures[_research_executor.submit(category_evidence,identity,relaxed,item[0],item[1])]=(True,item)
+    for item in STRENGTHS:
+        futures[_research_executor.submit(category_evidence,identity,relaxed,item[0],item[1])]=(False,item)
+    done,pending=wait(futures,timeout=20)
+    issue_hits=[];strength_hits=[];failed=0
+    for future in done:
+        is_issue,item=futures[future]
+        try:
+            rows,conf=future.result()
+            if rows and conf>=45:
+                if is_issue:
+                    label,terms,description,check=item
+                    issue_hits.append((conf,label,description,check,rows))
+                else:
+                    label,terms,description=item
+                    strength_hits.append((conf,label,description,rows))
+        except Exception:
+            failed+=1
+    for future in pending:
+        future.cancel()
+    issue_hits.sort(reverse=True,key=lambda x:x[0])
+    strength_hits.sort(reverse=True,key=lambda x:x[0])
     issues=[];checks=[];sources=[];evidence=[]
-    for conf,label,text,check,rows in issue_hits[:4]:
-        issues.append(text);checks.append({'title':label,'detail':check});evidence.append({'category':label,'confidence':conf,'matches':len(rows)})
-        for r in rows[:2]:
-            u=r.get('url','');tt=clean(r.get('title',''))
-            if u and tt and not any(s.get('url')==u for s in sources):sources.append({'title':tt,'url':u})
+    for conf,label,description,check,rows in issue_hits[:4]:
+        issues.append(description)
+        checks.append({'title':label,'detail':check})
+        evidence.append({'category':label,'confidence':conf,'matches':len(rows)})
+        for row in rows[:2]:
+            url=row.get('url','');title=clean(row.get('title',''))
+            if url and title and not any(s.get('url')==url for s in sources):
+                sources.append({'title':title,'url':url})
     strengths=[]
-    for conf,label,text,rows in strength_hits[:3]:
-        strengths.append(text)
-        for r in rows[:1]:
-            u=r.get('url','');tt=clean(r.get('title',''))
-            if u and tt and not any(s.get('url')==u for s in sources):sources.append({'title':tt,'url':u})
-    if not issues:
-        broad=[]
-        for q in [f'"{relaxed}" common problems',f'"{relaxed}" reliability issues',f'"{base}" "{engine}" forum problems']:
-            broad.extend(search(q,10))
-        low=' '.join(alow((r.get('title') or '')+' '+(r.get('snippet') or '')) for r in broad)
-        for label,terms,text,check in ISSUES:
-            hit=sum(1 for t in terms if alow(t) in low)
-            if hit>=1:issues.append(text);checks.append({'title':label,'detail':check})
-            if len(issues)>=3:break
-        for r in broad[:5]:
-            u=r.get('url','');tt=clean(r.get('title',''))
-            if u and tt and not any(s.get('url')==u for s in sources):sources.append({'title':tt,'url':u})
+    for conf,label,description,rows in strength_hits[:3]:
+        strengths.append(description)
+        for row in rows[:1]:
+            url=row.get('url','');title=clean(row.get('title',''))
+            if url and title and not any(s.get('url')==url for s in sources):
+                sources.append({'title':title,'url':url})
+    partial=bool(pending or failed)
     if not strengths:
-        strengths=['Não foram encontrados pontos fortes técnicos com evidência pública suficiente; isto não é uma avaliação negativa, apenas ausência de evidência consistente.']
+        strengths=['Sem pontos fortes específicos confirmados nas fontes públicas consultadas.' + (' Pesquisa externa incompleta.' if partial else '')]
     if not issues:
-        issues=['Não foram encontrados problemas recorrentes com evidência pública suficiente para esta combinação exata de modelo e motor.']
+        issues=['Não foram confirmados problemas recorrentes para esta combinação exata de modelo e motor.' + (' Pesquisa externa incompleta: não interpretar como ausência de problemas.' if partial else '')]
     if not checks:
-        checks=[{'title':'Diagnóstico e VIN','detail':'Confirmar campanhas/recalls pelo VIN e fazer diagnóstico independente antes da compra.'}]
-    research_score=max([e['confidence'] for e in evidence],default=35)
-    return {'strengths':strengths[:3],'issues':issues[:4],'checks':checks[:4],'sources':sources[:8],
-            'evidence':evidence[:6],'research_score':research_score,'engine_focus':engine,
-            'research_available':bool(issue_hits or strength_hits),'identity_used':identity}
+        checks=[{'title':'Diagnóstico e VIN','detail':'Verificar o historial e as campanhas pelo VIN e realizar inspeção independente antes da compra.'}]
+    return {'strengths':strengths[:3],'issues':issues[:4],'checks':checks[:4],
+            'sources':sources[:8],'evidence':evidence[:6],
+            'research_score':max([e['confidence'] for e in evidence],default=0),
+            'engine_focus':engine,'research_available':bool(issue_hits or strength_hits),
+            'research_partial':partial,'categories_checked':len(done)-failed,
+            'categories_total':len(futures),'identity_used':identity}
+
 
 @app.route('/')
 def home():
