@@ -9,7 +9,7 @@ on:
 jobs:
   search-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,6 +28,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_search_catalog_contract.py' -v
           python -m unittest discover -s tests -p 'test_inventory_cache.py' -v
           python -m unittest discover -s tests -p 'test_inventory_enrichment.py' -v
+          python -m unittest discover -s tests -p 'test_a5_ehybrid_ui.py' -v
 
       - name: Validate Search JavaScript syntax
         run: |
@@ -43,3 +44,23 @@ jobs:
           node --check /tmp/debe-search.js
 
 
+
+      - name: Probe A5 e-hybrid live Standvirtual pages
+        run: |
+          python - <<'PY'
+          from search_poc.connectors.standvirtual import _reader_rows
+          from search_poc.vehicle_identity import spec_matches
+          seen=[]
+          for slug in ('a5-avant','a5-limousine'):
+              try:
+                  url='https://www.standvirtual.com/carros/audi/'+slug+'?search%5Bfilter_enum_fuel_type%5D=plugin-hybrid'
+                  cars=_reader_rows(url,'',timeout=15,limit=50,validate=False)
+                  exact=[v for v in cars if spec_matches('Audi','A5','e-hybrid','all',v)]
+                  print('A5_EHYBRID_PROBE',slug,'total',len(cars),'exact',len(exact),
+                        'samples',[(v.get('title'),v.get('price_eur'),v.get('url')) for v in exact[:3]],flush=True)
+                  seen.extend(exact)
+              except Exception as exc:
+                  print('A5_EHYBRID_SOURCE_ERROR',slug,str(exc)[:150],flush=True)
+          if len({v['url'] for v in seen})<2:
+              raise SystemExit('Insufficient live Audi A5 e-hybrid adverts retrieved')
+          PY
