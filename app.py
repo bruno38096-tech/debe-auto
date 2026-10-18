@@ -272,29 +272,66 @@ def from_snippet(r,key,fg,current):
     if not(ym and pm and kk):return None
     p,k=num(pm.group(1)),num(kk.group(1));y=ym.group(1)
     return {'title':key,'year':y,'km':kms(k),'price':eur(p),'fuel':fuel(blob),'score':score(y,k),'url':u,'source':source(u)} if valid_price(p) and 0<k<=1000000 else None
+# Shared bounded pool: the live comparison search must return before the
+# web worker times out, even if marketplace servers become unresponsive.
+_comparable_executor=ThreadPoolExecutor(max_workers=14)
+
 def discover(model,motor,current='',limit=4):
-    key=model_key(model);fg=fuel_group(motor);ft=fuel_term(motor);out=[];cat=pisca_category_url(key)
+    key=model_key(model)
+    fg=fuel_group(motor)
+    ft=fuel_term(motor)
+    out=[];results=[];urls=[]
+    cat=pisca_category_url(key)
+    queries=[
+        f'site:piscapisca.pt/carros/usados "{key}" {ft}',
+        f'site:standvirtual.com/carros/anuncio "{key}" {ft}',
+        f'site:olx.pt "{key}" {ft}',
+        f'"{key}" {ft} usado Portugal'
+    ]
+    jobs={_comparable_executor.submit(search,q,12):"search" for q in queries}
     if cat:
-        try:out.extend(parse_pisca_category(fetch_text(cat),key,fg,current,limit*3))
-        except:pass
-    queries=[f'site:piscapisca.pt/carros/usados "{key}" {ft}',f'site:standvirtual.com/carros/anuncio "{key}" {ft}',f'site:custojusto.pt "{key}" {ft}',f'site:olx.pt "{key}" {ft}',f'"{key}" {ft} usado Portugal'];results=[];urls=[]
-    for q in queries:
-        for r in search(q,14):
-            results.append(r);u=r.get('url','')
-            if u.startswith('http') and any(x in u for x in ['piscapisca.pt/carros/usados/','standvirtual.com/carros/anuncio','olx.pt','custojusto.pt']) and u not in urls:urls.append(u)
-    with ThreadPoolExecutor(max_workers=5) as ex:
-        for f in as_completed([ex.submit(from_url,u,key,fg,current) for u in urls[:18]]):
-            it=f.result()
-            if it:out.append(it)
-    for r in results:
-        it=from_snippet(r,key,fg,current)
-        if it:out.append(it)
+        jobs[_comparable_executor.submit(lambda: parse_pisca_category(fetch_text(cat),key,fg,current,limit*3))]="category"
+    done,pending=wait(jobs,timeout=12)
+    for future in done:
+        try:
+            rows=future.result() or []
+            if jobs[future]=="category":
+                out.extend(rows)
+            else:
+                results.extend(rows)
+        except Exception:
+            pass
+    for future in pending:
+        future.cancel()
+    for row in results:
+        url=row.get('url','')
+        if (url.startswith('https://') or url.startswith('http://')) and any(domain in url for domain in ('piscapisca.pt/carros/usados/','standvirtual.com/carros/anuncio','olx.pt/','custojusto.pt/')):
+            if url not in urls:
+                urls.append(url)
+    detail_jobs=[_comparable_executor.submit(from_url,url,key,fg,current) for url in urls[:8]]
+    detail_done,detail_pending=wait(detail_jobs,timeout=8)
+    for future in detail_done:
+        try:
+            row=future.result()
+            if row:
+                out.append(row)
+        except Exception:
+            pass
+    for future in detail_pending:
+        future.cancel()
+    for row in results:
+        item=from_snippet(row,key,fg,current)
+        if item:
+            out.append(item)
     ded=[];seen=set()
-    for x in out:
-        sig=(num(x['year']),num(x['km']),num(x['price']))
-        if sig in seen:continue
-        seen.add(sig);ded.append(x)
-    ded.sort(key=lambda x:(-x['score'],num(x['price'])));return ded[:limit]
+    for item in out:
+        signature=(num(item['year']),num(item['km']),num(item['price']))
+        if signature in seen:
+            continue
+        seen.add(signature)
+        ded.append(item)
+    ded.sort(key=lambda item:(-item['score'],num(item['price'])))
+    return ded[:limit]
 
 # ---------- dynamic research engine ----------
 ISSUES=[
