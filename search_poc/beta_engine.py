@@ -889,6 +889,17 @@ def search_all(q, condition="all", max_per_source=3, make="", model="", variant=
             row.update(meta)
             statuses.append(row)
 
+    # Similar engines are useful separately, but are never counted as exact
+    # adverts or disguised as the selected variant.
+    alternatives=[]
+    if make and model and variant:
+        for candidate in results:
+            if (spec_matches(make,model,"",body,candidate)
+                    and not spec_matches(make,model,variant,body,candidate)
+                    and _complete_vehicle_row(dict(candidate))):
+                alternatives.append(candidate)
+        alternatives=_dedup(alternatives)[:5]
+
     valid_results=[]
     rejected_by_source={}
     incomplete_by_source={}
@@ -967,6 +978,6 @@ def search_all(q, condition="all", max_per_source=3, make="", model="", variant=
         q,len(results),sum(int(st.get("discovered_count") or 0) for st in statuses),
         summary["rejected_irrelevant"],summary["rejected_incomplete"],
         summary["sources_timeout"],summary["sources_error"])
-    payload={"query":q,"condition":condition,"exact_match":True,"stock_status":"verified_listings" if results else "not_confirmed","source_links":source_links,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary['sources_checked']} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
+    payload={"query":q,"condition":condition,"alternatives":alternatives,"exact_match":True,"stock_status":"verified_listings" if results else "not_confirmed","source_links":source_links,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary['sources_checked']} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
     with _cache_lock:_cache[cache_key]=(now,payload)
     return payload
