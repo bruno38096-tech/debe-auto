@@ -7,7 +7,7 @@ results into one format. Dedicated direct connectors are used when available.
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from urllib.parse import quote_plus, urlparse
 from bs4 import BeautifulSoup
-import html, re, time, threading, requests, unicodedata
+import html, re, time, threading, requests, unicodedata, logging
 
 from search_poc.beta_sources import SOURCES
 from search_poc.query_validation import query_matches_row, identity_codes
@@ -718,12 +718,26 @@ def _dedup(rows):
     return out
 
 def _complete_vehicle_row(row):
-    """Only surface records that are actionable as vehicle listings."""
-    if not row.get("year") or not row.get("price_eur"):
+    """Keep real listing URLs with enough vehicle facts, never generic model pages.
+
+    Missing prices are honestly displayed as 'Preço sob consulta'; the result
+    is marked as incomplete so users can verify it at the original advertiser.
+    """
+    if not row.get("url") or not row.get("title"):
         return False
-    condition=(row.get("condition") or "").lower()
-    if condition.startswith("used") and row.get("mileage_km") is None:
+    url=urlparse(row["url"])
+    if url.scheme not in {"http","https"} or not url.netloc:
         return False
+    # Require at least two substantive details; prevents manufacturer landing
+    # pages and search/category pages being advertised as individual cars.
+    has_year=row.get("year") is not None
+    has_price=row.get("price_eur") is not None
+    has_km=row.get("mileage_km") is not None
+    if sum((has_year,has_price,has_km)) < 2:
+        return False
+    # Missing price or odometer is surfaced transparently, not invented.
+    if not (has_year and has_price and has_km):
+        row["data_incomplete"]=True
     return True
 
 
@@ -734,7 +748,7 @@ def search_all(q, condition="all", max_per_source=3):
     now=time.time()
     with _cache_lock:
         hit=_cache.get(cache_key)
-        if hit and now-hit[0]<(30 if hit[1].get('partial') else CACHE_TTL):return hit[1]
+        if hit and now-hit[0]<(30 if hit[1].get('partial') or not hit[1].get('results') else CACHE_TTL):return hit[1]
 
     results=[]
     statuses=[]
@@ -857,10 +871,23 @@ def search_all(q, condition="all", max_per_source=3):
         "explicit_discount":sum(1 for r in results if r.get("discount_pct")),
         "sources_with_hits":sum(1 for s in statuses if int(s.get("accepted_count",s.get("count") or 0))>0),
         "sources_checked":len(selected_sources)-sum(1 for st in statuses if st["status"]=="timeout"),
+        "sources_timeout":sum(1 for st in statuses if st["status"]=="timeout"),
+        "sources_error":sum(1 for st in statuses if st["status"]=="error"),
+        "vehicles_with_missing_facts":sum(1 for r in results if r.get("data_incomplete")),
         "catalog_sources":len(SOURCES),
         "rejected_irrelevant":sum(rejected_by_source.values()),
         "rejected_incomplete":sum(incomplete_by_source.values()),
     }
-    payload={"query":q,"condition":condition,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary['sources_checked']} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
+    source_links=[{"name":src["name"],"url":src["url"]} for src in selected_sources
+                  if src.get("url","").startswith("https://")]
+    if "bmw" in ascii_low(q) and "330e" in ascii_low(q) and "touring" in ascii_low(q):
+        source_links.insert(0,{"name":"BMW Premium Selection — 330e Touring",
+                               "url":"https://bmwpremiumselection.bmw.pt/carros-usados/bmw-serie-3/330e-touring/"})
+    logging.getLogger(__name__).info(
+        "DEBE Search complete query=%r accepted=%s discovered=%s rejected=%s incomplete=%s timeout=%s errors=%s",
+        q,len(results),sum(int(st.get("discovered_count") or 0) for st in statuses),
+        summary["rejected_irrelevant"],summary["rejected_incomplete"],
+        summary["sources_timeout"],summary["sources_error"])
+    payload={"query":q,"condition":condition,"source_links":source_links,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary['sources_checked']} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
     with _cache_lock:_cache[cache_key]=(now,payload)
     return payload
