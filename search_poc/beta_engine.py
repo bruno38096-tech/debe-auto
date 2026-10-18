@@ -608,7 +608,7 @@ def _direct_specials(q, make='', model='', variant='', body='all'):
         return discover_rows(q,limit=60,timeout=5,pages=1)
     def standvirtual():
         from search_poc.connectors.standvirtual import discover_rows
-        return discover_rows(q,limit=80,timeout=6,max_pages=1,make=make,model=model,body=body)
+        return discover_rows(q,limit=80,timeout=6,max_pages=1,make=make,model=model,body=body,variant=variant)
     tasks.extend((piscapisca,standvirtual))
 
     results=[]
@@ -973,7 +973,7 @@ def search_all(q, condition="all", max_per_source=3, make="", model="", variant=
     }
     source_links=[{"name":src["name"],"url":src["url"]} for src in selected_sources
                   if src.get("url","").startswith("https://")]
-    generic_route=marketplace_model_route(make,model,body) if make and model else ""
+    generic_route=marketplace_model_route(make,model,body,variant) if make and model else ""
     if generic_route:
         source_links.insert(0,{"name":"Standvirtual — "+make+" "+model,
                                "url":generic_route})
