@@ -9,7 +9,7 @@ on:
 jobs:
   search-regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,3 +43,30 @@ jobs:
           node --check /tmp/debe-search.js
 
 
+
+      - name: Verify production listings for BMW 330e and GLC with AMG separation
+        run: |
+          python - <<'PY'
+          import requests,time
+          from search_poc.vehicle_identity import spec_matches
+          api="https://debe-search-beta.onrender.com/search-beta/api/search"
+          scenarios=[
+            ("BMW","Série 3","330e","station",3),
+            ("Mercedes-Benz","GLC","GLC 300 e","suv",3),
+            ("Mercedes-Benz","GLC","AMG GLC 63","suv",0),
+          ]
+          for make,model,variant,body,minimum in scenarios:
+              begin=time.monotonic()
+              r=requests.get(api,params=dict(make=make,model=model,variant=variant,body=body,condition="all"),timeout=45)
+              r.raise_for_status()
+              d=r.json()
+              ads=d.get("results",[])
+              dated=sum(1 for a in ads if a.get("observed_at"))
+              bad=[a.get("title") for a in ads if not spec_matches(make,model,variant,body,a)]
+              print("LIVE_EXACT",make,model,variant,"count",len(ads),
+                    "dated",dated,"seconds",round(time.monotonic()-begin,1),
+                    "bad",bad,"samples",[(a.get("title"),a.get("price_eur")) for a in ads[:3]],flush=True)
+              if len(ads)<minimum:raise SystemExit("Missing live listings for "+variant)
+              if dated<minimum:raise SystemExit("Snapshot not published for "+variant)
+              if bad:raise SystemExit("Wrong engine returned: "+str(bad))
+          PY
