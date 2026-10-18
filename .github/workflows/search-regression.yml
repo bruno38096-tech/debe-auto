@@ -56,8 +56,18 @@ jobs:
             "price_labels",text.count("Preço"),"km_labels",text.count("km"),flush=True)
           print("BMW_FEED_HEADER",repr(text[:1100]),flush=True)
           if offers:
+              import re
               match=offers[0]
+              groups={}
+              for item in offers:groups.setdefault(item.group(2),item)
+              unique=list(groups.values())
+              segment=text[match.end():unique[1].start() if len(unique)>1 else len(text)]
               print("BMW_FEED_OFFER_BLOCK",repr(text[match.end():match.end()+2000]),flush=True)
+              print("BMW_FIRST_CARD_LEN",len(segment),
+                    "km",re.findall(r"[\\d.]+\\s*km",segment,re.I)[:6],
+                    "years",re.findall(r"20\\d{2}",segment)[:6],
+                    "price_context",repr(segment[max(0,segment.find("Preço")-130):segment.find("Preço")+260]),
+                    "end",repr(segment[-350:]),flush=True)
           PY
       - name: Probe supplemental stock for BMW and Mercedes
         run: |
