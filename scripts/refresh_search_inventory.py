@@ -40,6 +40,39 @@ def valid_old(row):
     except (ValueError,TypeError,KeyError):return False
 
 
+def supplemental_rows(make, model):
+    """Representative manufacturer and variant directories for incomplete model feeds.
+
+    Sources are never treated as inventory without individual advert links and
+    independently extracted year, odometer and published price.
+    """
+    extra=[]
+    if make=="BMW" and model=="Série 3":
+        try:
+            from search_poc.connectors.bmw_reader_fallback import discover_rows as bmw_offers
+            extra.extend(bmw_offers(timeout=12))
+        except Exception as exc:
+            print("BMW_OFFICIAL_FEED_ERROR",str(exc)[:160],flush=True)
+    if make=="Mercedes-Benz" and model=="GLC":
+        from search_poc.connectors.standvirtual import _reader_rows
+        for slug in ("glc-300","glc-63"):
+            try:
+                extra.extend(_reader_rows(
+                    "https://www.standvirtual.com/carros/mercedes-benz/"+slug,
+                    "",timeout=12,limit=50,validate=False))
+            except Exception as exc:
+                print("GLC_VARIANT_FEED_ERROR",slug,str(exc)[:130],flush=True)
+    if make=="Porsche" and model=="911":
+        try:
+            from search_poc.connectors.standvirtual import _reader_rows
+            extra.extend(_reader_rows(
+                "https://www.standvirtual.com/carros/porsche/911-carrera",
+                "",timeout=12,limit=40,validate=False))
+        except Exception as exc:
+            print("PORSCHE_911_FEED_ERROR",str(exc)[:130],flush=True)
+    return extra
+
+
 def harvest(pair):
     make,model=pair
     query=canonical_query(make,model,"","all")
@@ -48,7 +81,8 @@ def harvest(pair):
                            make=make,model=model,body="all")
     except Exception as exc:
         print("FEED_ERROR",make,model,str(exc)[:120],flush=True)
-        return key(make,model),[]
+        rows=[]
+    rows.extend(supplemental_rows(make,model))
     out=[];seen=set()
     for row in rows:
         if not spec_matches(make,model,"","all",row):
@@ -63,8 +97,9 @@ def harvest(pair):
             "title":row.get("title",""),"url":url,
             "year":row.get("year"),"mileage_km":row.get("mileage_km"),
             "price_eur":row.get("price_eur"),"condition":row.get("condition") or "used",
-            "source_key":"standvirtual","source":"Standvirtual — última observação",
-            "official":False,"dealer":row.get("dealer") or "",
+            "source_key":row.get("source_key") or "standvirtual",
+            "source":row.get("source") or "Standvirtual — última observação",
+            "official":bool(row.get("official")),"dealer":row.get("dealer") or "",
             "discovery":"scheduled_snapshot","observed_at":timestamp,
         })
         if len(out)>=40:break

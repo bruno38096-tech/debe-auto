@@ -44,6 +44,13 @@ class BMWReaderTests(unittest.TestCase):
         self.assertEqual(offers[1]["price_eur"], 52946)
         self.assertIsNone(offers[1]["conditional_price_eur"])
 
+    def test_markdown_bold_price_and_nested_image_links(self):
+        markup = PAGE.replace("Preço: 43.450,00 €", "Preço:**43.450,00 €**")
+        rows = parse_bmw_reader(markup)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["price_eur"], 45450)
+        self.assertEqual(rows[0]["conditional_price_eur"], 43450)
+
     def test_no_vehicle_urls_no_fabricated_offers(self):
         self.assertEqual(parse_bmw_reader(
             "BMW Série 3 330e Touring 22.500 km 2025 Preço: 50.000,00 €"

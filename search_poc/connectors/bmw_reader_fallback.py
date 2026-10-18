@@ -7,7 +7,7 @@ import re
 from urllib.parse import urlparse
 import requests
 
-URL = "https://bmwpremiumselection.bmw.pt/carros-usados/bmw-serie-3/330e-touring/"
+URL = "https://bmwpremiumselection.bmw.pt/serie-3/330e-touring/"
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/plain", "X-Return-Format": "markdown"}
 
 # Reader Markdown places an optional quoted offer ID after the URL and often
@@ -33,11 +33,13 @@ def money(value):
 def parse_bmw_reader(markdown):
     """Extract independently clickable offers from reader Markdown, not category links."""
     matches = list(_OFFER.finditer(markdown or ""))
-    # The last linked thumbnail/title for an offer is nearest its price and km.
-    last_by_id = {}
+    # Each card has multiple linked photographs. Take the FIRST link for
+    # each distinct offer, then extract facts until the NEXT offer begins.
+    # Taking the last thumbnail discarded kilometre/year/price metadata.
+    first_by_id = {}
     for match in matches:
-        last_by_id[match.group(2)] = match
-    offers = sorted(last_by_id.values(), key=lambda item: item.start())
+        first_by_id.setdefault(match.group(2), match)
+    offers = sorted(first_by_id.values(), key=lambda item: item.start())
     out = []
     seen = set()
     for index, match in enumerate(offers):
@@ -45,13 +47,19 @@ def parse_bmw_reader(markdown):
         if offer_id in seen:
             continue
         limit = offers[index + 1].start() if index + 1 < len(offers) else len(markdown)
-        text = markdown[match.end():min(limit, match.end() + 10000)]
-        facts = _FACTS.search(text[:1500])
-        price_match = _PRICE.search(text[:2300])
-        if not facts or not price_match:
+        text = markdown[match.end():min(limit, match.end() + 14000)]
+        # The public Reader wraps asking prices in **bold Markdown**, e.g.
+        # "Preço:**43.450,00 €**"; strip formatting before monetary parsing.
+        text = re.sub(r"\*{1,3}", "", text)
+        # BMW places the model year inside image alt text but the odometer
+        # below the image carousel; they need not be adjacent.
+        km_match = re.search(r"(\d{1,3}(?:[.\s]\d{3})+)\s*km\b", text, re.I)
+        year_match = re.search(r"\b20(?:1\d|2\d)\b", text)
+        price_match = _PRICE.search(text)
+        if not km_match or not year_match or not price_match:
             continue
-        km = int(re.sub(r"\D", "", facts.group(1)))
-        year = int(facts.group(2))
+        km = int(re.sub(r"\D", "", km_match.group(1)))
+        year = int(year_match.group(0))
         displayed_price = money(price_match.group(1))
         if not (0 < km < 1000000 and 2010 <= year <= 2030 and 3000 <= displayed_price <= 250000):
             continue
