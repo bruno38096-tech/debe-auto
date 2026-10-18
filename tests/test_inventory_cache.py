@@ -51,6 +51,20 @@ class InventoryCacheTests(unittest.TestCase):
                                  variant="GLC 300 e",body="suv")
             self.assertEqual(len(rows),1)
 
+    def test_certified_condition_uses_cached_official_listings(self):
+        certified={
+            **EXAMPLE,"title":"BMW Série 3 330e Touring",
+            "condition":"used_certified","official":True,
+            "source_key":"bmw_premium",
+            "observed_at":datetime.now(timezone.utc).isoformat(),
+        }
+        with patch("search_poc.beta_engine.model_inventory",return_value=[certified]):
+            rows=_direct_specials("BMW Série 3 330e Touring",
+                                 make="BMW",model="Série 3",variant="330e",
+                                 body="station",condition="used_certified")
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["condition"],"used_certified")
+
     def test_cache_does_not_turn_glc_300_into_amg_63(self):
         snapshot={**EXAMPLE,"observed_at":datetime.now(timezone.utc).isoformat()}
         with patch("search_poc.beta_engine._direct_specials",return_value=[snapshot]),\
