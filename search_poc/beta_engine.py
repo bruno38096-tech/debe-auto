@@ -11,6 +11,7 @@ import html, re, time, threading, requests, unicodedata, logging
 
 from search_poc.beta_sources import SOURCES
 from search_poc.query_validation import query_matches_row, identity_codes
+from search_poc.vehicle_identity import spec_matches, marketplace_model_route
 
 HEADERS={
     "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36",
@@ -500,7 +501,7 @@ def _source_query(q, source, limit=3, timeout=8):
         out.append(_detail_enrich(row,source,timeout=min(timeout,3)))
     return out,error
 
-def _direct_specials(q):
+def _direct_specials(q, make='', model='', variant='', body='all'):
     """Run independent direct inventory connectors concurrently.
 
     A sequential chain of BMW/marketplace requests previously exceeded the
@@ -607,7 +608,7 @@ def _direct_specials(q):
         return discover_rows(q,limit=60,timeout=5,pages=1)
     def standvirtual():
         from search_poc.connectors.standvirtual import discover_rows
-        return discover_rows(q,limit=80,timeout=6,max_pages=1)
+        return discover_rows(q,limit=80,timeout=6,max_pages=1,make=make,model=model,body=body)
     tasks.extend((piscapisca,standvirtual))
 
     results=[]
@@ -792,10 +793,10 @@ def _complete_vehicle_row(row):
     return True
 
 
-def search_all(q, condition="all", max_per_source=3):
+def search_all(q, condition="all", max_per_source=3, make="", model="", variant="", body="all"):
     q=clean(q)
     if not q:return {"query":"","results":[],"sources":[],"summary":{"total":0}}
-    cache_key=(ascii_low(q),condition,max_per_source)
+    cache_key=(ascii_low(q),condition,max_per_source,ascii_low(make),ascii_low(model),ascii_low(variant),body)
     now=time.time()
     with _cache_lock:
         hit=_cache.get(cache_key)
@@ -804,11 +805,12 @@ def search_all(q, condition="all", max_per_source=3):
     results=[]
     statuses=[]
     selected_sources=_relevant_sources(q)
+    is_match=(lambda row: spec_matches(make,model,variant,body,row)) if make and model else (lambda row: query_matches_row(q,row))
 
     # Give validated dealer / marketplace connectors priority. Launching
     # ten expensive public-index crawls at once starved the direct connectors
     # and resulted in all sources timing out, despite real inventory online.
-    direct_job=_search_executor.submit(_direct_specials,q)
+    direct_job=_search_executor.submit(_direct_specials,q,make,model,variant,body)
     completed,pending=wait([direct_job],timeout=15)
     direct_results=[]
     if direct_job in completed:
@@ -819,7 +821,7 @@ def search_all(q, condition="all", max_per_source=3):
     else:
         direct_job.cancel()
 
-    usable_direct=any(query_matches_row(q,dict(row)) and _complete_vehicle_row(dict(row))
+    usable_direct=any(is_match(dict(row)) and _complete_vehicle_row(dict(row))
                       for row in direct_results)
     statuses=[]
     results=[]
@@ -893,7 +895,7 @@ def search_all(q, condition="all", max_per_source=3):
     accepted_by_source={}
     for row in results:
         key=row.get("source_key") or "unknown"
-        if not query_matches_row(q,row):
+        if not is_match(row):
             rejected_by_source[key]=rejected_by_source.get(key,0)+1
             continue
         if not _complete_vehicle_row(row):
@@ -950,6 +952,10 @@ def search_all(q, condition="all", max_per_source=3):
     }
     source_links=[{"name":src["name"],"url":src["url"]} for src in selected_sources
                   if src.get("url","").startswith("https://")]
+    generic_route=marketplace_model_route(make,model,body) if make and model else ""
+    if generic_route:
+        source_links.insert(0,{"name":"Standvirtual — "+make+" "+model,
+                               "url":generic_route})
     if "audi" in ascii_low(q) and "a6" in ascii_low(q) and "e-tron" in ascii_low(q):
         source_links.insert(0,{"name":"Standvirtual — Audi A6 Avant e-tron",
                                "url":"https://www.standvirtual.com/carros/audi/a6-avant-e-tron"})
@@ -961,6 +967,6 @@ def search_all(q, condition="all", max_per_source=3):
         q,len(results),sum(int(st.get("discovered_count") or 0) for st in statuses),
         summary["rejected_irrelevant"],summary["rejected_incomplete"],
         summary["sources_timeout"],summary["sources_error"])
-    payload={"query":q,"condition":condition,"source_links":source_links,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary['sources_checked']} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
+    payload={"query":q,"condition":condition,"exact_match":True,"stock_status":"verified_listings" if results else "not_confirmed","source_links":source_links,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary['sources_checked']} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
     with _cache_lock:_cache[cache_key]=(now,payload)
     return payload
