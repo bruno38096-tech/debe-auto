@@ -240,7 +240,7 @@ def api_search():
     if condition not in set(CONDITION_LABELS)|{"all"}: condition="all"
     if not q and make and model:
         q=canonical_query(make,model,variant,body)
-    payload=search_all(q,condition=condition,max_per_source=3)
+    payload=search_all(q,condition=condition,max_per_source=3,make=make,model=model,variant=variant,body=body)
     payload["display_query"]=" · ".join(x for x in (make,model,variant) if x) if make else q
     payload["selectors"]={"make":make,"model":model,"variant":variant,"body":body}
     return jsonify(payload)
