@@ -43,6 +43,22 @@ jobs:
           node --check /tmp/debe-search.js
 
 
+      - name: Inspect current BMW Reader inventory format
+        run: |
+          python - <<'PY'
+          import requests
+          from search_poc.connectors.bmw_reader_fallback import URL,_OFFER,parse_bmw_reader
+          resp=requests.get("https://r.jina.ai/"+URL,timeout=20)
+          text=resp.text
+          offers=list(_OFFER.finditer(text))
+          print("BMW_FEED_DEBUG","http",resp.status_code,"chars",len(text),
+            "raw_offer_links",len(offers),"parsed",len(parse_bmw_reader(text)),
+            "price_labels",text.count("Preço"),"km_labels",text.count("km"),flush=True)
+          print("BMW_FEED_HEADER",repr(text[:1100]),flush=True)
+          if offers:
+              match=offers[0]
+              print("BMW_FEED_OFFER_BLOCK",repr(text[match.end():match.end()+2000]),flush=True)
+          PY
       - name: Probe supplemental stock for BMW and Mercedes
         run: |
           python - <<'PY'
