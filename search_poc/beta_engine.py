@@ -509,7 +509,11 @@ def _direct_specials(q, make='', model='', variant='', body='all', condition='al
     default Gunicorn worker timeout on a cold request.
     """
     low=ascii_low(q)
-    cached=(model_inventory(make,model) if make and model and condition in {"all","used"} else [])
+    # Apply the selected condition to the stored source before deciding
+    # whether to skip network discovery (certified cars must also use cache).
+    cached=([row for row in model_inventory(make,model)
+             if condition=="all" or row.get("condition")==condition]
+            if make and model else [])
     if cached and (not variant or any(spec_matches(make,model,variant,body,row) for row in cached)):
         return cached
     tasks=[]
