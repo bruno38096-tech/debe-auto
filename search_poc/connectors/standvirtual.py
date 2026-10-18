@@ -192,8 +192,8 @@ def _reader_rows(route,query,timeout=8,limit=50,validate=True):
 
 
 def discover_rows(query, limit=40, timeout=12, validate=True, max_pages=3,
-                  make="",model="",body="all"):
-    route=marketplace_model_route(make,model,body) if make and model else _route_for_query(query)
+                  make="",model="",body="all",variant=""):
+    route=marketplace_model_route(make,model,body,variant) if make and model else _route_for_query(query)
     if not route:return []
     by_url={}
     for page in range(1,max_pages+1):
