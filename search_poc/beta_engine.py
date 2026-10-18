@@ -4,7 +4,7 @@ This is a beta discovery layer, not yet a contractual full-feed integration.
 It queries public indexed inventory pages concurrently and normalizes the
 results into one format. Dedicated direct connectors are used when available.
 """
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from urllib.parse import quote_plus, urlparse
 from bs4 import BeautifulSoup
 import html, re, time, threading, requests, unicodedata
@@ -18,6 +18,8 @@ HEADERS={
 }
 _cache={}
 _cache_lock=threading.Lock()
+# Bounded shared pool avoids blocking Gunicorn waiting for slow discovery sources.
+_search_executor=ThreadPoolExecutor(max_workers=18)
 CACHE_TTL=600
 _sitemap_cache={}
 _sitemap_lock=threading.Lock()
@@ -732,7 +734,7 @@ def search_all(q, condition="all", max_per_source=3):
     now=time.time()
     with _cache_lock:
         hit=_cache.get(cache_key)
-        if hit and now-hit[0]<CACHE_TTL:return hit[1]
+        if hit and now-hit[0]<(30 if hit[1].get('partial') else CACHE_TTL):return hit[1]
 
     results=[]
     statuses=[]
@@ -742,21 +744,34 @@ def search_all(q, condition="all", max_per_source=3):
     # national source sweep. For BMW 330e that serialized several live calls and
     # could push the request beyond Gunicorn's worker timeout. Run both layers
     # concurrently; result validation and deduplication remain unchanged.
-    with ThreadPoolExecutor(max_workers=min(13,max(2,len(selected_sources)+1))) as ex:
-        direct_job=ex.submit(_direct_specials,q)
-        jobs={ex.submit(_source_query,q,s,max_per_source,4):s for s in selected_sources}
-        for fut in as_completed(jobs):
-            s=jobs[fut]
-            try:
-                rows,err=fut.result()
-                results.extend(rows)
-                statuses.append({"key":s["key"],"name":s["name"],"count":len(rows),"status":"ok" if rows else ("error" if err else "empty"),"error":err})
-            except Exception as e:
-                statuses.append({"key":s["key"],"name":s["name"],"count":0,"status":"error","error":str(e)[:120]})
+    # The first HTTP response must be timely even if dealer sites or public
+    # search indexes are slow. Pending discoveries never block the request.
+    direct_job=_search_executor.submit(_direct_specials,q)
+    jobs={_search_executor.submit(_source_query,q,src,max_per_source,4):src for src in selected_sources}
+    done,pending=wait([direct_job,*jobs],timeout=22)
+    for fut,src in jobs.items():
+        if fut in pending:
+            statuses.append({"key":src["key"],"name":src["name"],"count":0,"status":"timeout",
+                             "error":"Fonte excedeu o tempo desta pesquisa."})
+            fut.cancel()
+            continue
+        try:
+            rows,err=fut.result()
+            results.extend(rows)
+            statuses.append({"key":src["key"],"name":src["name"],"count":len(rows),
+                             "status":"ok" if rows else ("error" if err else "empty"),"error":err})
+        except Exception as exc:
+            statuses.append({"key":src["key"],"name":src["name"],"count":0,
+                             "status":"error","error":str(exc)[:120]})
+    direct_results=[]
+    if direct_job in done:
         try:
             direct_results=direct_job.result()
         except Exception:
-            direct_results=[]
+            pass
+    else:
+        direct_job.cancel()
+    partial=bool(pending)
     results[0:0]=direct_results
 
     # Direct connectors are authoritative for their current scope. Reflect their
@@ -841,11 +856,11 @@ def search_all(q, condition="all", max_per_source=3):
         "used":sum(1 for r in results if r.get("condition")=="used"),
         "explicit_discount":sum(1 for r in results if r.get("discount_pct")),
         "sources_with_hits":sum(1 for s in statuses if int(s.get("accepted_count",s.get("count") or 0))>0),
-        "sources_checked":len(selected_sources),
+        "sources_checked":len(selected_sources)-sum(1 for st in statuses if st["status"]=="timeout"),
         "catalog_sources":len(SOURCES),
         "rejected_irrelevant":sum(rejected_by_source.values()),
         "rejected_incomplete":sum(incomplete_by_source.values()),
     }
-    payload={"query":q,"condition":condition,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {len(selected_sources)} relevantes consultadas nesta pesquisa. Conetores diretos + descoberta pública indexada; um resultado vazio não prova ausência de stock na fonte."}
+    payload={"query":q,"condition":condition,"partial":partial,"results":results,"sources":sorted(statuses,key=lambda x:(-x["count"],x["name"])),"summary":summary,"beta_note":f"Beta nacional: {len(SOURCES)} fontes no catálogo; {summary[\x27sources_checked\x27]} fontes responderam nesta pesquisa." + (" Algumas fontes excederam o tempo limite; resultados parciais." if partial else "") + " Conetores diretos e descoberta pública indexada: ausência de resultados não prova ausência de stock."}
     with _cache_lock:_cache[cache_key]=(now,payload)
     return payload
