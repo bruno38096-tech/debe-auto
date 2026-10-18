@@ -575,7 +575,10 @@ def _direct_specials(q):
                           "condition":"new_stock","dealer":"Caetano","discovery":"direct_connector"})
                 rows.append(d)
             return rows
-        tasks.extend((premium330,bmcar330,caetano330))
+        def bmw_reader():
+            from search_poc.connectors.bmw_reader_fallback import discover_rows
+            return discover_rows(timeout=8)
+        tasks.extend((premium330,bmcar330,caetano330,bmw_reader))
 
     if "bmw" in low and not ("330" in low and "touring" in low):
         def premium_generic():
