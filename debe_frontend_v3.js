@@ -93,7 +93,7 @@
   }
   function renderDeals(data) {
     const deals = (data.deals || []).filter(deal => safeUrl(deal.url));
-    const modelDeals = deals.filter(deal => deal.group === 'model').slice(0, 2);
+    const modelDeals = deals.filter(deal => !deal.group || deal.group === 'model').slice(0, 4);
     const budgetDeals = deals.filter(deal => deal.group === 'budget').slice(0, 2);
     let html = '';
     if (modelDeals.length) html += '<div class="dealGroupTitle">Mesmo modelo</div>' + modelDeals.map(dealCard).join('');
