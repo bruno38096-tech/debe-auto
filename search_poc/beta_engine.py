@@ -595,6 +595,24 @@ def _direct_specials(q, make='', model='', variant='', body='all', condition='al
             return discover_rows(q,timeout=8)
         tasks.append(premium_generic)
 
+    if make=="Audi" and model=="A5" and ("ehybrid" in ascii_low(variant).replace("-","") or "e-hybrid" in low or "ehybrid" in low):
+        def audi_a5_ehybrid():
+            from search_poc.connectors.standvirtual import _reader_rows
+            out=[]
+            directories=["a5-avant","a5-limousine"]
+            if body=="station":directories=["a5-avant"]
+            if body=="sedan":directories=["a5-limousine"]
+            for slug in directories:
+                try:
+                    out.extend(_reader_rows(
+                        "https://www.standvirtual.com/carros/audi/"+slug+
+                        "?search%5Bfilter_enum_fuel_type%5D=plugin-hybrid",
+                        "",timeout=6,limit=35,validate=False))
+                except Exception:
+                    pass
+            return out
+        tasks.append(audi_a5_ehybrid)
+
     if "volvo" in low:
         def volvo():
             from search_poc.connectors.volvo_inventory import fetch_inventory
@@ -981,6 +999,11 @@ def search_all(q, condition="all", max_per_source=3, make="", model="", variant=
     }
     source_links=[{"name":src["name"],"url":src["url"]} for src in selected_sources
                   if src.get("url","").startswith("https://")]
+    if make=="Audi" and model=="A5" and "ehybrid" in ascii_low(variant).replace("-",""):
+        source_links.insert(0,{"name":"Audi A5 Avant híbrido plug-in",
+          "url":"https://www.standvirtual.com/carros/audi/a5-avant?search%5Bfilter_enum_fuel_type%5D=plugin-hybrid"})
+        source_links.insert(1,{"name":"Audi A5 Limousine híbrido plug-in",
+          "url":"https://www.standvirtual.com/carros/audi/a5-limousine?search%5Bfilter_enum_fuel_type%5D=plugin-hybrid"})
     generic_route=marketplace_model_route(make,model,body) if make and model else ""
     if generic_route:
         source_links.insert(0,{"name":"Standvirtual — "+make+" "+model,
