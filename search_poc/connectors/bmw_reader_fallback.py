@@ -14,8 +14,8 @@ HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/plain", "X-Return-Format
 # wraps thumbnails in nested image links. Match the real URL independently
 # of the link label and use the last anchor for each offer card.
 _OFFER = re.compile(
-    r"(https?://(?:www\\.)?bmwpremiumselection\\.bmw\\.pt/"
-    r"[^\\s)\\\"]+/bmw-serie-3-330e-touring/(\\d{6,})/?)",
+    r'(https?://(?:www\.)?bmwpremiumselection\.bmw\.pt/'
+    r'[^\s)"]+/bmw-serie-3-330e-touring/(\d{6,})/?)',
     re.I,
 )
 _FACTS = re.compile(
