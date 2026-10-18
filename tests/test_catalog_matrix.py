@@ -67,6 +67,20 @@ class GeneralIdentityTests(unittest.TestCase):
         self.assertFalse(spec_matches("Mercedes-Benz","GLC","AMG GLC 63","suv",
                    row("Mercedes-Benz GLC 300")))
 
+    def test_variant_aliases_and_more_specific_trims(self):
+        self.assertTrue(spec_matches("Kia","Sportage","Plug-in Hybrid","suv",
+                                    row("Kia Sportage 1.6 PHEV GT Line")))
+        self.assertTrue(spec_matches("Porsche","911","Carrera","coupe",
+                                    row("Porsche 911 Carrera 3.0 PDK")))
+        self.assertFalse(spec_matches("Porsche","911","Carrera","coupe",
+                                     row("Porsche 911 Carrera S 3.0 PDK")))
+        self.assertFalse(spec_matches("Porsche","911","Carrera","coupe",
+                                     row("Porsche 911 Carrera Cabriolet")))
+        self.assertFalse(spec_matches("Tesla","Model Y","RWD","suv",
+                                     row("Tesla Model Y Long Range RWD")))
+        self.assertFalse(spec_matches("Volvo","EX30","Single Motor","suv",
+                                     row("Volvo EX30 Single Motor Extended Range")))
+
     def test_specific_model_routes(self):
         self.assertEqual(marketplace_model_route("Audi","Q4 e-tron","suv"),
                          "https://www.standvirtual.com/carros/audi/q4-e-tron")
