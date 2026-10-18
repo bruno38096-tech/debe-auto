@@ -1,0 +1,74 @@
+name: DEBE Search inventory refresh
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/debe-inventory-refresh.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: debe-search-inventory
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout Search production branch
+        uses: actions/checkout@v4
+        with:
+          ref: debe-search-poc
+          persist-credentials: true
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Collect all catalog model listings
+        env:
+          PYTHONUNBUFFERED: '1'
+          DEBE_INVENTORY_LIMIT: '0'
+        run: python scripts/refresh_search_inventory.py
+      - name: Validate snapshot before publication
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from search_poc.vehicle_catalog import CATALOG
+          from search_poc.vehicle_identity import spec_matches
+          path=Path('search_poc/inventory_snapshot.json')
+          snapshot=json.loads(path.read_text(encoding='utf-8'))
+          expected=sum(len(entry['models']) for entry in CATALOG.values())
+          assert snapshot.get('model_count')==expected, (snapshot.get('model_count'),expected)
+          assert snapshot.get('models_fresh',0)>=3, snapshot.get('models_fresh')
+          assert snapshot.get('vehicle_count',0)>=10, snapshot.get('vehicle_count')
+          observed=0
+          for key,rows in snapshot['entries'].items():
+              make,model=key.split('|',1)
+              for row in rows:
+                  assert spec_matches(make,model,'','all',row), (key,row.get('url'))
+                  assert row.get('observed_at')
+                  observed+=1
+          assert observed==snapshot['vehicle_count']
+          print('VALIDATED_MODEL_COUNT',expected,'FRESH_MODELS',snapshot['models_fresh'],
+                'VERIFIED_LISTINGS',observed,flush=True)
+          PY
+      - name: Publish verified inventory to Search branch
+        run: |
+          git config user.name 'DEBE Inventory Bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add search_poc/inventory_snapshot.json
+          if git diff --cached --quiet; then
+            echo 'Inventory unchanged; no deployment needed.'
+            exit 0
+          fi
+          git commit -m 'Update dated DEBE Search inventory'
+          git push origin HEAD:debe-search-poc
