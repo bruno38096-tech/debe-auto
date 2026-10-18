@@ -81,6 +81,9 @@ def _route_for_query(query):
             return f"{BASE}/carros/mercedes-benz/glc-300?search%5Bfilter_enum_engine_code%5D=classe-glc"
         for token,slug in (("glc","glc"),("gla","gla"),("gle","gle"),("classe c","classe-c"),("classe e","classe-e")):
             if token in q:return f"{BASE}/carros/mercedes-benz/{slug}"
+    if "audi" in q and "a6" in q and ("e-tron" in q or "etron" in q):
+        station=any(x in q for x in ("avant","station","wagon","carrinha","estate"))
+        return f"{BASE}/carros/audi/a6-avant-e-tron" if station else f"{BASE}/carros/audi/a6-sportback-e-tron"
     if "audi" in q:
         # A4/A6 Avant have dedicated result routes and otherwise get diluted
         # by saloons when a station-wagon body is requested.
