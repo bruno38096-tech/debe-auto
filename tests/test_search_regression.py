@@ -22,6 +22,14 @@ class SearchRegressions(unittest.TestCase):
         self.assertFalse(query_matches_text(Q, "BMW 320d Touring", "2023 22 000 km"))
         self.assertFalse(query_matches_text(Q, "BMW Série 3 330e Sedan", "2023"))
 
+    def test_audi_e_tron_route_and_variant(self):
+        from search_poc.connectors.standvirtual import _route_for_query
+        q = "Audi A6 e-tron Avant"
+        self.assertEqual(_route_for_query(q),
+            "https://www.standvirtual.com/carros/audi/a6-avant-e-tron")
+        self.assertTrue(query_matches_text(q, "Audi A6 Avant e-tron 100 kWh", "2025 7 200 km"))
+        self.assertFalse(query_matches_text(q, "Audi A6 Avant 40 TDI", "2020 55 000 km"))
+
     def test_real_listing_can_have_missing_price(self):
         row = {**ROW, "price_eur": None}
         self.assertTrue(engine._complete_vehicle_row(row))
