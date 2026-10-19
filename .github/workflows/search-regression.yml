@@ -65,3 +65,22 @@ jobs:
           if len({v['url'] for v in seen})<2:
               raise SystemExit('Insufficient live Audi A5 e-hybrid adverts retrieved')
           PY
+
+      - name: Verify public Instagram media URLs
+        run: |
+          python - <<'PY'
+          import requests
+          from io import BytesIO
+          from PIL import Image
+          root='https://debe-search-beta.onrender.com/social/'
+          for slug in ('search','checklist','analyse','a5'):
+              response=requests.get(root+slug+'.png',timeout=45)
+              print('MEDIA_URL',slug,'HTTP',response.status_code,
+                    'type',response.headers.get('content-type'),
+                    'bytes',len(response.content),flush=True)
+              response.raise_for_status()
+              assert response.headers.get('content-type','').startswith('image/png')
+              assert response.content.startswith(bytes([137,80,78,71,13,10,26,10]))
+              im=Image.open(BytesIO(response.content))
+              assert im.size==(1080,1350),im.size
+          PY
