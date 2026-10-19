@@ -318,6 +318,18 @@ def api_search():
 def api_sources():
     return jsonify({"count":len(SOURCES),"sources":SOURCES})
 
+@app.get("/social/<slug>.png")
+def social_card(slug):
+    from search_poc.social_cards import render_png
+    try:
+        image=render_png(slug)
+    except KeyError:
+        return ("Not found",404)
+    response=Response(image,mimetype="image/png")
+    response.headers["Cache-Control"]="public, max-age=86400"
+    return response
+
+
 @app.get("/health")
 def health():
     return jsonify({"ok":True,"service":"debe-search-beta","sources":len(SOURCES)})
@@ -332,6 +344,9 @@ def _env_truthy(name):
 if _env_truthy("DEBE_SEARCH_INTEGRATED_BETA"):
     from app import app as integrated_app
     app = integrated_app
+    # Social media assets remain accessible when Render uses integrated mode.
+    app.add_url_rule("/social/<slug>.png",
+                     endpoint="debe_social_card",view_func=social_card)
 
 
 if __name__=="__main__":
