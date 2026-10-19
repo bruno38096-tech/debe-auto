@@ -29,6 +29,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_inventory_cache.py' -v
           python -m unittest discover -s tests -p 'test_inventory_enrichment.py' -v
           python -m unittest discover -s tests -p 'test_a5_ehybrid_ui.py' -v
+          python -m unittest discover -s tests -p 'test_social_cards.py' -v
 
       - name: Validate Search JavaScript syntax
         run: |
