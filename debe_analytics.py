@@ -12,6 +12,11 @@ from flask import request, jsonify
 
 ALLOWED_EVENTS = {
     'page_view',
+    'search_started',
+    'search_completed',
+    'search_failed',
+    'analysis_opened',
+    'listing_opened',
     'listing_submitted',
     'listing_loaded',
     'listing_failed',
