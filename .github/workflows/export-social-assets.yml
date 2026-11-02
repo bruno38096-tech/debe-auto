@@ -1,0 +1,45 @@
+name: Export DEBE social images
+on:
+  push:
+    branches: [debe-search-poc]
+    paths:
+      - '.github/workflows/export-social-assets.yml'
+      - 'search_poc/social_cards.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install renderer
+        run: python -m pip install 'Pillow>=10.2'
+      - name: Generate first-party DEBE social cards
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from search_poc.social_cards import CREATIVES, render_png
+          output=Path('assets/social')
+          output.mkdir(parents=True, exist_ok=True)
+          for slug in CREATIVES:
+              target=output / f'{slug}.png'
+              target.write_bytes(render_png(slug))
+              print(f'{target}: {target.stat().st_size} bytes')
+          PY
+      - name: Commit public static media for social scheduling
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add assets/social/*.png
+          if ! git diff --cached --quiet; then
+            git commit -m 'Export DEBE social campaign images'
+            git push
+          fi
