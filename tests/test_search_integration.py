@@ -13,7 +13,7 @@ class SearchBetaIntegrationTests(unittest.TestCase):
     def test_search_beta_is_invisible_when_flag_off(self):
         with patch.dict(os.environ, {"DEBE_SEARCH_BETA_ENABLED":"0"}, clear=False):
             self.assertEqual(404,self.client.get("/search-beta/").status_code)
-            self.assertNotIn(b"Pesquisar carros",self.client.get("/").data)
+            self.assertIn(b"Pesquisar carros",self.client.get("/").data)  # visible entry point, gated endpoint
 
     def test_search_beta_is_exposed_when_flag_on(self):
         with patch.dict(os.environ, {"DEBE_SEARCH_BETA_ENABLED":"1"}, clear=False):
@@ -24,6 +24,8 @@ class SearchBetaIntegrationTests(unittest.TestCase):
             self.assertEqual(200,search.status_code)
             self.assertIn(b"DEBE Search",search.data)
             self.assertIn(b"/search-beta/api/catalog",search.data)
+            self.assertIn(b"debe-search-november-tracking",search.data)
+            self.assertIn(b"utm_source",search.data)
 
     def test_catalog_is_guarded_by_same_flag(self):
         with patch.dict(os.environ, {"DEBE_SEARCH_BETA_ENABLED":"0"}, clear=False):
@@ -42,7 +44,7 @@ class SearchBetaIntegrationTests(unittest.TestCase):
                 self.assertEqual(200,response.status_code)
                 data=response.get_json()
                 self.assertEqual("search-beta",data["feature"])
-                search.assert_called_once_with("BMW iX3",condition="all",max_per_source=3)
+                search.assert_called_once_with("BMW iX3",condition="all",max_per_source=3,make="",model="",variant="",body="all")
 
 
 if __name__=="__main__":
