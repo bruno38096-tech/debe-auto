@@ -5,7 +5,7 @@ robots/sitemap endpoints without adding third-party trackers or cookies.
 """
 from flask import Response
 
-BASE_URL='https://debe-auto.onrender.com'
+BASE_URL='https://debe-search-beta.onrender.com'
 INDEXNOW_KEY='9bfddbc4b0e831cd9e58c894a2cfeb54'
 
 
@@ -56,7 +56,7 @@ def install(appmod):
     if 'debe_robots' not in app.view_functions:
         app.add_url_rule('/robots.txt',endpoint='debe_robots',view_func=lambda:Response('User-agent: *\nAllow: /\nSitemap: '+BASE_URL+'/sitemap.xml\n',mimetype='text/plain'))
     if 'debe_sitemap' not in app.view_functions:
-        xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>'+BASE_URL+'/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url></urlset>'
+        xml='<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>'+BASE_URL+'/search-beta/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url></urlset>'
         app.add_url_rule('/sitemap.xml',endpoint='debe_sitemap',view_func=lambda:Response(xml,mimetype='application/xml'))
     if 'debe_indexnow_key' not in app.view_functions:
         app.add_url_rule('/'+INDEXNOW_KEY+'.txt',endpoint='debe_indexnow_key',view_func=lambda:Response(INDEXNOW_KEY,mimetype='text/plain'))
