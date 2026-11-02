@@ -46,6 +46,17 @@ jobs:
 
 
 
+      - name: Smoke-test public DEBE landing pages
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 2 --retry-all-errors --retry-delay 5 --max-time 90 'https://debe-auto.onrender.com/' -o /tmp/debe-analysis.html
+          grep -q 'DEBE' /tmp/debe-analysis.html
+          curl -fsSL --retry 2 --retry-all-errors --retry-delay 5 --max-time 90 'https://debe-search-beta.onrender.com/search-beta/' -o /tmp/debe-search.html
+          grep -q 'debe-search-november-tracking' /tmp/debe-search.html
+          curl -fsSL --retry 2 --retry-all-errors --retry-delay 5 --max-time 90 'https://debe-search-beta.onrender.com/sitemap.xml' -o /tmp/debe-sitemap.xml
+          grep -q '/search-beta/' /tmp/debe-sitemap.xml
+          echo 'Public DEBE Analysis and Search pages, tracking snippet and Search sitemap: OK'
+
       - name: Probe A5 e-hybrid live Standvirtual pages
         run: |
           python - <<'PY'
