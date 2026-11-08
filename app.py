@@ -7,6 +7,21 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 
 app = Flask(__name__, static_folder='.')
+
+# DEBE Análise was retired on 2026-11-08. Keep only a lightweight redirect
+# from historical links until the legacy Render service is removed.
+@app.before_request
+def retire_debe_analysis():
+    if request.path in ('/', '/index.html'):
+        return Response(status=302, headers={
+            'Location': 'https://debe-search-beta.onrender.com/search-beta/',
+            'Cache-Control': 'no-store',
+        })
+    return Response(
+        'DEBE Análise foi descontinuado. Usa DEBE Search: https://debe-search-beta.onrender.com/search-beta/',
+        status=410, mimetype='text/plain',
+        headers={'Cache-Control':'no-store'},
+    )
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36','Accept-Language':'pt-PT,pt;q=0.9,en;q=0.8'}
 
 def clean(s): return re.sub(r'\s+',' ',htmllib.unescape(s or '')).strip()
