@@ -343,6 +343,9 @@ def _env_truthy(name):
 if _env_truthy("DEBE_SEARCH_INTEGRATED_BETA"):
     from app import app as integrated_app
     app = integrated_app
+    # Redirect old homepage to Search: Análise is no longer offered.
+    from flask import redirect
+    app.view_functions["home"] = lambda: redirect("/search-beta/", code=302)
     # Social media assets remain accessible when Render uses integrated mode.
     app.add_url_rule("/social/<slug>.png",
                      endpoint="debe_social_card",view_func=social_card)
