@@ -38,13 +38,13 @@ def _integrated_html():
         '<div class="hero"><div><div class="brand">DEBE Search <em>Beta</em></div>',
     )
     # DEBE November discovery and anonymous acquisition funnel.
-    html = html.replace("</head>", """<meta name="description" content="DEBE Search: pesquisa gratuitamente carros novos, usados e certificados em Portugal por marca, modelo e motorização. Compara anúncios e analisa antes de comprar.">
+    html = html.replace("</head>", """<meta name="description" content="DEBE Search: pesquisa gratuitamente carros novos, usados e certificados em Portugal por marca, modelo e motorização. Consulta os anúncios originais antes de comprar.">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="https://debe-search-beta.onrender.com/search-beta/">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="pt_PT">
-<meta property="og:title" content="DEBE Search — Encontra e analisa carros em Portugal">
-<meta property="og:description" content="Pesquisa automóveis em diferentes fontes e abre a análise independente de cada anúncio.">
+<meta property="og:title" content="DEBE Search — Pesquisa carros em Portugal">
+<meta property="og:description" content="Pesquisa automóveis em diferentes fontes e consulta o anúncio original de cada vendedor.">
 <meta property="og:url" content="https://debe-search-beta.onrender.com/search-beta/">
 </head>""")
     # Tab-scoped random session; no personal data, URL or persistent user ID.
@@ -79,8 +79,7 @@ def _integrated_html():
     var a=e.target.closest?e.target.closest('a[href]'):null;
     if(!a)return;
     var h=a.href||'';
-    if(h.indexOf('debe-auto.onrender.com/?analyse=')>=0)record('analysis_opened');
-    else if(a.closest('.card')&&/^https?:/.test(h))record('listing_opened');
+    if(a.closest('.card')&&/^https?:/.test(h))record('listing_opened');
   });
 })();
 </script>"""
